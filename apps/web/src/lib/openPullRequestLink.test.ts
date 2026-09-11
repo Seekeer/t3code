@@ -361,3 +361,45 @@ describe("findProjectForChangeRequest", () => {
     ).toBeUndefined();
   });
 });
+
+describe("unsupported Gitea change request links", () => {
+  it("leaves Gitea PR URLs for the system browser until an in-app reader exists", () => {
+    expect(parseChangeRequestUrl("https://git.example.com/owner/repo/pulls/42")).toBeNull();
+    expect(parseChangeRequestUrl("https://gitea.com/foo/bar/pulls/1")).toBeNull();
+  });
+
+  it("does not read a Gitea PR list or a non-numeric index", () => {
+    expect(parseChangeRequestUrl("https://git.example.com/owner/repo/pulls")).toBeNull();
+    expect(parseChangeRequestUrl("https://git.example.com/owner/repo/pulls/abc")).toBeNull();
+    expect(parseChangeRequestUrl("https://git.example.com/owner/repo/issues/42")).toBeNull();
+  });
+
+  it("leaves GitHub URLs on the GitHub rule", () => {
+    expect(parseChangeRequestUrl("https://github.com/owner/repo/pull/42")).toEqual({
+      host: "github.com",
+      repository: "owner/repo",
+      number: 42,
+    });
+    expect(parseChangeRequestUrl("https://github.com/owner/repo/pulls/42")).toBeNull();
+  });
+
+  it("does not treat public GitHub or Bitbucket /pulls/ paths as change requests", () => {
+    expect(parseChangeRequestUrl("https://github.com/owner/repo/pulls/42")).toBeNull();
+    expect(parseChangeRequestUrl("https://bitbucket.org/owner/repo/pulls/42")).toBeNull();
+  });
+
+  it("still matches native paths on self-hosted lookalike hosts", () => {
+    expect(parseChangeRequestUrl("https://github.internal/owner/repo/pull/42")).toEqual({
+      host: "github.internal",
+      repository: "owner/repo",
+      number: 42,
+    });
+    expect(
+      parseChangeRequestUrl("https://bitbucket.internal/workspace/repo/pull-requests/5"),
+    ).toEqual({
+      host: "bitbucket.internal",
+      repository: "workspace/repo",
+      number: 5,
+    });
+  });
+});

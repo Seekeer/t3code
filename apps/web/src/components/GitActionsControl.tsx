@@ -34,6 +34,7 @@ import {
   CloudUploadIcon,
   GitBranchPlusIcon,
   GitCommitIcon,
+  GitPullRequestIcon,
   InfoIcon,
   LockIcon,
   GlobeIcon,
@@ -55,6 +56,7 @@ import {
   resolveLiveThreadBranchUpdate,
   resolveThreadBranchMetadataPatch,
   resolveQuickAction,
+  resolvePublishHost,
   resolveThreadBranchUpdate,
 } from "./GitActionsControl.logic";
 import { AnimatedHeight } from "./AnimatedHeight";
@@ -122,7 +124,7 @@ interface PendingDefaultBranchAction {
 
 type PublishProviderKind = Extract<
   SourceControlProviderKind,
-  "github" | "gitlab" | "bitbucket" | "azure-devops"
+  "github" | "gitlab" | "bitbucket" | "azure-devops" | "gitea"
 >;
 
 type GitActionToastId = ReturnType<typeof toastManager.add>;
@@ -202,11 +204,20 @@ const PUBLISH_PROVIDER_OPTIONS = [
     pathPlaceholder: "project/repository",
     Icon: AzureDevOpsIcon,
   },
+  {
+    value: "gitea",
+    // A self-hosted Gitea has no canonical host, so the real one is read from discovery below.
+    label: "Gitea",
+    description: "Your authenticated instance",
+    host: null,
+    pathPlaceholder: "owner/repository",
+    Icon: GitPullRequestIcon,
+  },
 ] as const satisfies ReadonlyArray<{
   readonly value: PublishProviderKind;
   readonly label: string;
   readonly description: string;
-  readonly host: string;
+  readonly host: string | null;
   readonly pathPlaceholder: string;
   readonly Icon: typeof GitHubIcon;
 }>;
@@ -426,6 +437,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
       gitlab: null,
       bitbucket: null,
       "azure-devops": null,
+      gitea: null,
     };
     for (const provider of sourceControlDiscovery.data?.sourceControlProviders ?? []) {
       if (isPublishProviderKind(provider.kind)) {
@@ -433,6 +445,16 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
       }
     }
     return accounts;
+  }, [sourceControlDiscovery.data]);
+  const publishHostByProvider = useMemo(() => {
+    const hosts: Partial<Record<PublishProviderKind, string>> = {};
+    for (const provider of sourceControlDiscovery.data?.sourceControlProviders ?? []) {
+      const host = Option.getOrNull(provider.auth.host);
+      if (isPublishProviderKind(provider.kind) && host) {
+        hosts[provider.kind] = host;
+      }
+    }
+    return hosts;
   }, [sourceControlDiscovery.data]);
   const publishProviderReadiness = useMemo(() => {
     const sourceControlProviders = sourceControlDiscovery.data?.sourceControlProviders ?? [];
@@ -475,7 +497,10 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
     : "";
   const publishRepository = publishRepositoryOverride ?? publishRepositoryPrefill;
   const currentPublishProvider = publishProviderOption(publishProvider);
-  const publishHost = currentPublishProvider.host;
+  const publishHost = resolvePublishHost({
+    discoveredHost: publishHostByProvider[publishProvider],
+    fallbackHost: currentPublishProvider.host,
+  });
   const publishPathPlaceholder = currentPublishProvider.pathPlaceholder;
   const publishProviderLabel = currentPublishProvider.label;
   const publishWizardSteps = ["Provider", "Repository", "Summary"] as const;
@@ -711,9 +736,14 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                     Repository
                   </label>
                   <div className="flex items-stretch overflow-hidden rounded-md border border-input bg-background focus-within:outline-2 focus-within:-outline-offset-1 focus-within:outline-ring">
-                    <span className="flex shrink-0 items-center gap-1.5 border-r border-input bg-muted/50 px-2.5 font-mono text-xs text-muted-foreground">
+                    <span
+                      className={cn(
+                        "flex shrink-0 items-center gap-1.5 border-r border-input bg-muted/50 px-2.5 font-mono text-xs text-muted-foreground",
+                        publishHost === null && "border-r-0",
+                      )}
+                    >
                       <currentPublishProvider.Icon className="size-3.5" />
-                      {publishHost}/
+                      {publishHost === null ? currentPublishProvider.label : `${publishHost}/`}
                     </span>
                     <input
                       id="publish-repository-path"

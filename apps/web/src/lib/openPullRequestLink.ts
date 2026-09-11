@@ -140,7 +140,7 @@ export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | nu
   // GitHub, and any Enterprise install: /{owner}/{repo}/pull/{n}
   if (isHostOf(host, "github.com", "github")) {
     const match = /^\/([^/]+\/[^/]+)\/pull\/(\d+)(?:\/|$)/u.exec(url.pathname);
-    return claim(host, match);
+    if (match) return claim(host, match);
   }
   // GitLab, self-hosted included: /{group}/[{subgroup}/...]{repo}/-/merge_requests/{n}. The `/-/`
   // separator is GitLab's own, so the hostname is not asked about.
@@ -149,7 +149,7 @@ export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | nu
   // Bitbucket Cloud: /{workspace}/{repo}/pull-requests/{n}
   if (isHostOf(host, "bitbucket.org", "bitbucket")) {
     const match = /^\/([^/]+\/[^/]+)\/pull-requests\/(\d+)(?:\/|$)/u.exec(url.pathname);
-    return claim(host, match);
+    if (match) return claim(host, match);
   }
   // Azure DevOps, both the current host and the per-organisation one it replaced. `_git` is part
   // of the repository path there, as it is in the remote URL the identity is read from.
@@ -157,6 +157,8 @@ export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | nu
     const match = /^\/((?:[^/]+\/)*_git\/[^/]+)\/pullrequest\/(\d+)(?:\/|$)/u.exec(url.pathname);
     return claim(host, match);
   }
+  // Gitea's `/pulls/{n}` shape is intentionally not claimed here. The in-app pull-request
+  // registry does not have a Gitea reader yet, so those links must remain ordinary external links.
   return null;
 }
 
@@ -183,7 +185,7 @@ export function changeRequestRepositoryUrl(targetUrl: string): string | null {
   const url = new URL(targetUrl);
   const repositoryPath =
     /^(.*?)\/-\/merge_requests\/\d+(?:\/|$)/iu.exec(url.pathname)?.[1] ??
-    /^(.*?)(?:\/pull\/\d+|\/-\/merge_requests\/\d+|\/pull-requests\/\d+|\/pullrequest\/\d+)(?:\/|$)/iu.exec(
+    /^(.*?)(?:\/pull\/\d+|\/-\/merge_requests\/\d+|\/pull-requests\/\d+|\/pullrequest\/\d+|\/pulls\/\d+)(?:\/|$)/iu.exec(
       url.pathname,
     )?.[1];
   if (!repositoryPath) return null;
