@@ -37,7 +37,6 @@ function apiOutput(stdout: string, status = 200): VcsProcess.VcsProcessOutput {
 
 /** Serializes a fixture into the stdout tea would produce. */
 function apiJson(value: unknown, status = 200): VcsProcess.VcsProcessOutput {
-  // @effect-diagnostics-next-line preferSchemaOverJson:off
   return apiOutput(JSON.stringify(value), status);
 }
 

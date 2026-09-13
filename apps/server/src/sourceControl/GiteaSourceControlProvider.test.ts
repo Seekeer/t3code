@@ -14,7 +14,6 @@ function makeProvider(gitea: Partial<GiteaCli.GiteaCli["Service"]>) {
 
 /** Serializes tea's login list for discovery inputs. */
 function loginsJson(logins: ReadonlyArray<Record<string, string>>): string {
-  // @effect-diagnostics-next-line preferSchemaOverJson:off
   return JSON.stringify(logins);
 }
 

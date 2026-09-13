@@ -1,7 +1,18 @@
-import type { SourceControlProviderInfo, SourceControlProviderKind } from "@t3tools/contracts";
+import type {
+  RepositoryIdentity,
+  SourceControlProviderInfo,
+  SourceControlProviderKind,
+} from "@t3tools/contracts";
 
 export interface ChangeRequestPresentation {
-  readonly icon: "github" | "gitlab" | "azure-devops" | "bitbucket" | "gitea" | "change-request";
+  readonly icon:
+    | "github"
+    | "gitlab"
+    | "forgejo"
+    | "azure-devops"
+    | "bitbucket"
+    | "gitea"
+    | "change-request";
   readonly providerName: string;
   readonly shortName: string;
   readonly longName: string;
@@ -43,6 +54,28 @@ const GITLAB_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
   urlExample: "https://gitlab.com/group/project/-/merge_requests/42",
 };
 
+const FORGEJO_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
+  icon: "forgejo",
+  providerName: "Forgejo",
+  shortName: "PR",
+  longName: "pull request",
+  pluralLongName: "pull requests",
+  providerLongName: "Forgejo pull request",
+  checkoutCommandExample: "tea pr checkout 123",
+  urlExample: "https://codeberg.org/owner/repo/pulls/42",
+};
+
+const GITEA_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
+  icon: "gitea",
+  providerName: "Gitea",
+  shortName: "PR",
+  longName: "pull request",
+  pluralLongName: "pull requests",
+  providerLongName: "Gitea pull request",
+  checkoutCommandExample: "tea pulls checkout 123",
+  urlExample: "https://git.example.com/owner/repo/pulls/42",
+};
+
 const AZURE_DEVOPS_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
   icon: "azure-devops",
   providerName: "Azure DevOps",
@@ -64,17 +97,6 @@ const BITBUCKET_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
   urlExample: "https://bitbucket.org/workspace/repo/pull-requests/42",
 };
 
-const GITEA_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
-  icon: "gitea",
-  providerName: "Gitea",
-  shortName: "PR",
-  longName: "pull request",
-  pluralLongName: "pull requests",
-  providerLongName: "Gitea pull request",
-  checkoutCommandExample: "tea pulls checkout 123",
-  urlExample: "https://git.example.com/owner/repo/pulls/42",
-};
-
 const GENERIC_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
   icon: "change-request",
   providerName: "source control",
@@ -94,32 +116,23 @@ export function resolveChangeRequestPresentation(
       return GITHUB_CHANGE_REQUEST_PRESENTATION;
     case "gitlab":
       return GITLAB_CHANGE_REQUEST_PRESENTATION;
+    case "forgejo":
+      return FORGEJO_CHANGE_REQUEST_PRESENTATION;
+    case "gitea":
+      return GITEA_CHANGE_REQUEST_PRESENTATION;
     case "azure-devops":
       return AZURE_DEVOPS_CHANGE_REQUEST_PRESENTATION;
     case "bitbucket":
       return BITBUCKET_CHANGE_REQUEST_PRESENTATION;
-    case "gitea":
-      return GITEA_CHANGE_REQUEST_PRESENTATION;
     case "unknown":
       return GENERIC_CHANGE_REQUEST_PRESENTATION;
   }
 }
 
-export function resolveChangeRequestPresentationForKind(
+function resolveChangeRequestPresentationForKind(
   kind: SourceControlProviderKind,
 ): ChangeRequestPresentation {
   return resolveChangeRequestPresentation({ kind, name: "", baseUrl: "" });
-}
-
-export function formatChangeRequestAction(
-  verb: "View" | "Create",
-  presentation: ChangeRequestPresentation,
-): string {
-  return `${verb} ${presentation.shortName}`;
-}
-
-export function formatCreateChangeRequestPhrase(presentation: ChangeRequestPresentation): string {
-  return `create ${presentation.shortName}`;
 }
 
 export function getChangeRequestTerminology(
@@ -211,13 +224,6 @@ function isBitbucketHost(host: string): boolean {
   return host === "bitbucket.org" || hasDnsLabel(host, "bitbucket");
 }
 
-// Only the obvious installations. Gitea is overwhelmingly self-hosted on hostnames that carry no
-// hint of it, so the rest are recognized by GiteaSourceControlProvider's unknown-remote refinement,
-// which asks `tea` whether the host is one of its authenticated logins.
-function isGiteaHost(host: string): boolean {
-  return host === "gitea.com" || hasDnsLabel(host, "gitea");
-}
-
 export function detectSourceControlProviderFromRemoteUrl(
   remoteUrl: string,
 ): SourceControlProviderInfo | null {
@@ -226,6 +232,26 @@ export function detectSourceControlProviderFromRemoteUrl(
     return null;
   }
   const hostname = parseHostName(host);
+
+  if (hostname === "codeberg.org" || hasDnsLabel(hostname, "forgejo")) {
+    return {
+      kind: "forgejo",
+      name: "Forgejo",
+      baseUrl: /^https?:/iu.test(remoteUrl.trim())
+        ? new URL(remoteUrl.trim()).origin
+        : toBaseUrl(host),
+    };
+  }
+
+  if (hostname === "gitea.com" || hasDnsLabel(hostname, "gitea")) {
+    return {
+      kind: "gitea",
+      name: hostname === "gitea.com" ? "Gitea" : "Gitea Self-Hosted",
+      baseUrl: /^https?:/iu.test(remoteUrl.trim())
+        ? new URL(remoteUrl.trim()).origin
+        : toBaseUrl(host),
+    };
+  }
 
   if (isGitHubHost(hostname)) {
     return {
@@ -259,17 +285,49 @@ export function detectSourceControlProviderFromRemoteUrl(
     };
   }
 
-  if (isGiteaHost(hostname)) {
-    return {
-      kind: "gitea",
-      name: hostname === "gitea.com" ? "Gitea" : "Gitea Self-Hosted",
-      baseUrl: toBaseUrl(host),
-    };
-  }
-
   return {
     kind: "unknown",
     name: host,
     baseUrl: toBaseUrl(host),
   };
+}
+
+/**
+ * The provider-native repository selector. `displayName` is the full path below the host, which
+ * is what nested GitLab groups need; owner/name is the two-segment fallback for identities
+ * recorded before that field existed.
+ *
+ * Azure DevOps is the exception: `az repos pr list --repository` takes a repository name, and
+ * takes the organisation and project from the checkout it detects — so the recorded
+ * `org/project/_git/repo` path is refused outright and the whole repository reads as
+ * unavailable. Its name is the last segment, which is what this hands over.
+ *
+ * One function because everything downstream is keyed by what it answers: the rows' own
+ * `repository`, the per-repository cursors, and the detail and diff reads a row leads to.
+ */
+export function sourceControlRepositorySelector(
+  identity:
+    | Pick<RepositoryIdentity, "provider" | "displayName" | "owner" | "name">
+    | null
+    | undefined,
+): string | null {
+  if (!identity) return null;
+  if (identity.provider === "azure-devops") {
+    const segments = (identity.displayName ?? "").split("/").filter((part) => part !== "_git");
+    return identity.name || segments.at(-1) || null;
+  }
+  if (identity.displayName) return identity.displayName;
+  return identity.owner && identity.name ? `${identity.owner}/${identity.name}` : null;
+}
+
+export function canonicalRepositoryKey(key: string): string {
+  return key
+    .replace(
+      /^(?:ssh\.dev\.azure\.com|vs-ssh\.visualstudio\.com)\/v3\/([^/]+)\/([^/]+)\/([^/]+)$/u,
+      "dev.azure.com/$1/$2/_git/$3",
+    )
+    .replace(
+      /^([^.]+)\.visualstudio\.com\/(?:defaultcollection\/)?([^/]+)\/_git\/([^/]+)$/u,
+      "dev.azure.com/$1/$2/_git/$3",
+    );
 }

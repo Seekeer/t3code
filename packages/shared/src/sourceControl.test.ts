@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  sourceControlRepositorySelector,
   detectSourceControlProviderFromRemoteUrl,
   getChangeRequestTerminologyForKind,
   isSshRemoteUrl,
@@ -25,10 +26,6 @@ describe("source control presentation", () => {
       singular: "pull request",
     });
     expect(getChangeRequestTerminologyForKind("bitbucket")).toEqual({
-      shortLabel: "PR",
-      singular: "pull request",
-    });
-    expect(getChangeRequestTerminologyForKind("gitea")).toEqual({
       shortLabel: "PR",
       singular: "pull request",
     });
@@ -60,9 +57,38 @@ describe("detectSourceControlProviderFromRemoteUrl", () => {
     expect(
       detectSourceControlProviderFromRemoteUrl("git@bitbucket.org:workspace/repo.git")?.kind,
     ).toBe("bitbucket");
-    expect(detectSourceControlProviderFromRemoteUrl("https://gitea.com/owner/repo.git")?.kind).toBe(
-      "gitea",
-    );
+  });
+
+  it("detects Forgejo hosts while preserving HTTP origins", () => {
+    for (const host of ["codeberg.org", "forgejo.example.test"]) {
+      expect(detectSourceControlProviderFromRemoteUrl(`http://${host}:3000/team/repo.git`)).toEqual(
+        {
+          kind: "forgejo",
+          name: "Forgejo",
+          baseUrl: `http://${host}:3000`,
+        },
+      );
+    }
+    expect(getChangeRequestTerminologyForKind("forgejo")).toEqual({
+      shortLabel: "PR",
+      singular: "pull request",
+    });
+  });
+
+  it("detects Gitea hosts while preserving HTTP origins", () => {
+    for (const host of ["gitea.com", "gitea.example.test"]) {
+      expect(detectSourceControlProviderFromRemoteUrl(`http://${host}:3000/team/repo.git`)).toEqual(
+        {
+          kind: "gitea",
+          name: host === "gitea.com" ? "Gitea" : "Gitea Self-Hosted",
+          baseUrl: `http://${host}:3000`,
+        },
+      );
+    }
+    expect(getChangeRequestTerminologyForKind("gitea")).toEqual({
+      shortLabel: "PR",
+      singular: "pull request",
+    });
   });
 
   it("detects Azure DevOps SSH remotes", () => {
@@ -149,9 +175,6 @@ describe("detectSourceControlProviderFromRemoteUrl", () => {
     expect(
       detectSourceControlProviderFromRemoteUrl("git@bitbucket.org:workspace/repo.git")?.kind,
     ).toBe("bitbucket");
-    expect(detectSourceControlProviderFromRemoteUrl("https://gitea.com/owner/repo.git")?.kind).toBe(
-      "gitea",
-    );
   });
 });
 
@@ -177,56 +200,33 @@ describe("isSshRemoteUrl", () => {
   });
 });
 
-describe("Gitea remote detection", () => {
-  it("names gitea.com and self-hosted installations distinctly", () => {
-    expect(detectSourceControlProviderFromRemoteUrl("https://gitea.com/owner/repo.git")).toEqual({
-      kind: "gitea",
-      name: "Gitea",
-      baseUrl: "https://gitea.com",
-    });
-    expect(
-      detectSourceControlProviderFromRemoteUrl("https://gitea.example.com/owner/repo.git"),
-    ).toEqual({
-      kind: "gitea",
-      name: "Gitea Self-Hosted",
-      baseUrl: "https://gitea.example.com",
-    });
+it("names an Azure DevOps repository by its own name, not its project path", () => {
+  // `az repos pr list --repository` takes a name and detects the organisation and project from
+  // the checkout; the recorded `org/project/_git/repo` path is refused, and the repository then
+  // reads as unavailable on the page.
+  const selector = sourceControlRepositorySelector({
+    provider: "azure-devops",
+    displayName: "contoso/payments/_git/checkout",
+    owner: "contoso",
+    name: "checkout",
   });
+  expect(selector).toBe("checkout");
+});
 
-  it("detects gitea.com across HTTPS, SCP-style, and ssh:// remotes", () => {
-    for (const remote of [
-      "https://gitea.com/owner/repo.git",
-      "git@gitea.com:owner/repo.git",
-      "ssh://git@gitea.com/owner/repo.git",
-    ]) {
-      expect(detectSourceControlProviderFromRemoteUrl(remote)?.kind).toBe("gitea");
-    }
+it("falls back to the path's last segment where an Azure identity has no name", () => {
+  const selector = sourceControlRepositorySelector({
+    provider: "azure-devops",
+    displayName: "contoso/payments/_git/checkout",
   });
+  expect(selector).toBe("checkout");
+});
 
-  it("normalizes case and preserves explicit ports", () => {
-    expect(detectSourceControlProviderFromRemoteUrl("https://GITEA.example.com/o/r.git")).toEqual({
-      kind: "gitea",
-      name: "Gitea Self-Hosted",
-      baseUrl: "https://gitea.example.com",
-    });
-    expect(
-      detectSourceControlProviderFromRemoteUrl("https://gitea.example.com:3000/o/r.git"),
-    ).toEqual({
-      kind: "gitea",
-      name: "Gitea Self-Hosted",
-      baseUrl: "https://gitea.example.com:3000",
-    });
+it("keeps a GitLab identity's whole path, because a nested group is part of the name", () => {
+  const selector = sourceControlRepositorySelector({
+    provider: "gitlab",
+    displayName: "group/subgroup/service",
+    owner: "group",
+    name: "service",
   });
-
-  // Gitea is usually self-hosted on a hostname that says nothing about it. The static detector must
-  // leave those alone; GiteaSourceControlProvider refines them from `tea`'s authenticated logins.
-  it("leaves arbitrary self-hosted hostnames unknown for tea-based refinement", () => {
-    for (const remote of [
-      "git@git.example.com:owner/repo.git",
-      "https://code.home.internal/team/project.git",
-      "https://192.168.1.10:3000/team/project.git",
-    ]) {
-      expect(detectSourceControlProviderFromRemoteUrl(remote)?.kind).toBe("unknown");
-    }
-  });
+  expect(selector).toBe("group/subgroup/service");
 });

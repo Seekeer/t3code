@@ -46,7 +46,7 @@ const giteaPullRequestDecodeErrorContext = {
   reference: Schema.String,
 };
 
-export class GiteaCliUnavailableError extends Schema.TaggedErrorClass<GiteaCliUnavailableError>()(
+export class GiteaCliUnavailableError extends Schema.TaggedError<GiteaCliUnavailableError>()(
   "GiteaCliUnavailableError",
   giteaCliExecutionErrorContext,
 ) {
@@ -59,7 +59,7 @@ export class GiteaCliUnavailableError extends Schema.TaggedErrorClass<GiteaCliUn
   }
 }
 
-export class GiteaCliAuthenticationError extends Schema.TaggedErrorClass<GiteaCliAuthenticationError>()(
+export class GiteaCliAuthenticationError extends Schema.TaggedError<GiteaCliAuthenticationError>()(
   "GiteaCliAuthenticationError",
   giteaCliExecutionErrorContext,
 ) {
@@ -72,7 +72,7 @@ export class GiteaCliAuthenticationError extends Schema.TaggedErrorClass<GiteaCl
   }
 }
 
-export class GiteaCliRateLimitError extends Schema.TaggedErrorClass<GiteaCliRateLimitError>()(
+export class GiteaCliRateLimitError extends Schema.TaggedError<GiteaCliRateLimitError>()(
   "GiteaCliRateLimitError",
   giteaCliExecutionErrorContext,
 ) {
@@ -85,7 +85,7 @@ export class GiteaCliRateLimitError extends Schema.TaggedErrorClass<GiteaCliRate
   }
 }
 
-export class GiteaPullRequestNotFoundError extends Schema.TaggedErrorClass<GiteaPullRequestNotFoundError>()(
+export class GiteaPullRequestNotFoundError extends Schema.TaggedError<GiteaPullRequestNotFoundError>()(
   "GiteaPullRequestNotFoundError",
   {
     ...giteaCliExecutionErrorContext,
@@ -116,7 +116,7 @@ export class GiteaPullRequestNotFoundError extends Schema.TaggedErrorClass<Gitea
   }
 }
 
-export class GiteaCliCommandError extends Schema.TaggedErrorClass<GiteaCliCommandError>()(
+export class GiteaCliCommandError extends Schema.TaggedError<GiteaCliCommandError>()(
   "GiteaCliCommandError",
   giteaCliExecutionErrorContext,
 ) {
@@ -165,7 +165,7 @@ export class GiteaCliCommandError extends Schema.TaggedErrorClass<GiteaCliComman
   }
 }
 
-export class GiteaPullRequestListDecodeError extends Schema.TaggedErrorClass<GiteaPullRequestListDecodeError>()(
+export class GiteaPullRequestListDecodeError extends Schema.TaggedError<GiteaPullRequestListDecodeError>()(
   "GiteaPullRequestListDecodeError",
   giteaCliDecodeErrorContext,
 ) {
@@ -178,7 +178,7 @@ export class GiteaPullRequestListDecodeError extends Schema.TaggedErrorClass<Git
   }
 }
 
-export class GiteaPullRequestDecodeError extends Schema.TaggedErrorClass<GiteaPullRequestDecodeError>()(
+export class GiteaPullRequestDecodeError extends Schema.TaggedError<GiteaPullRequestDecodeError>()(
   "GiteaPullRequestDecodeError",
   giteaPullRequestDecodeErrorContext,
 ) {
@@ -191,7 +191,7 @@ export class GiteaPullRequestDecodeError extends Schema.TaggedErrorClass<GiteaPu
   }
 }
 
-export class GiteaRepositoryDecodeError extends Schema.TaggedErrorClass<GiteaRepositoryDecodeError>()(
+export class GiteaRepositoryDecodeError extends Schema.TaggedError<GiteaRepositoryDecodeError>()(
   "GiteaRepositoryDecodeError",
   {
     ...giteaCliDecodeErrorContext,

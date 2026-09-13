@@ -18,13 +18,20 @@ const decodeDiscoveryItem = Schema.decodeUnknownSync(SourceControlProviderDiscov
 
 describe("SourceControlProviderKind", () => {
   it("round-trips every supported provider kind, including gitea", () => {
-    for (const kind of ["github", "gitlab", "azure-devops", "bitbucket", "gitea", "unknown"]) {
+    for (const kind of [
+      "github",
+      "gitlab",
+      "forgejo",
+      "azure-devops",
+      "bitbucket",
+      "gitea",
+      "unknown",
+    ]) {
       expect(encodeKind(decodeKind(kind))).toBe(kind);
     }
   });
 
   it("still rejects hosts this build does not support", () => {
-    expect(() => decodeKind("forgejo")).toThrow();
     expect(() => decodeKind("sourcehut")).toThrow();
   });
 });
