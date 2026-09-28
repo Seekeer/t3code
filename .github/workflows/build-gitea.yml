@@ -1,7 +1,7 @@
 name: Build Gitea fork artifacts
 
-# Personal fork build. Upstream runs on Blacksmith runners that do not exist in
-# this fork, so everything here uses GitHub-hosted runners instead.
+# Personal fork Windows build. Upstream runs on Blacksmith runners that do not
+# exist in this fork, so this uses a GitHub-hosted Windows runner instead.
 on:
   workflow_dispatch:
   push:
@@ -13,53 +13,6 @@ permissions:
   contents: read
 
 jobs:
-  linux:
-    name: Linux (server bundle + AppImage)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: true
-
-      - name: Install Linux packaging prerequisites
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libsecret-1-dev pkg-config imagemagick
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build Linux AppImage
-        run: vp run dist:desktop:linux
-
-      - name: Upload Linux server bundle
-        uses: actions/upload-artifact@v7
-        with:
-          name: t3-server-linux-x64
-          path: apps/server/dist
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload Linux AppImage
-        uses: actions/upload-artifact@v7
-        with:
-          name: t3-desktop-linux-x64
-          path: release/*.AppImage
-          if-no-files-found: error
-          retention-days: 30
-
   windows:
     name: Windows (NSIS installer)
     runs-on: windows-2022
