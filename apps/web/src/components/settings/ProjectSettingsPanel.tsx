@@ -26,7 +26,14 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
-import { ChevronDownIcon, CopyIcon, PlusIcon, SettingsIcon, Trash2Icon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  CopyIcon,
+  FolderIcon,
+  PlusIcon,
+  SettingsIcon,
+  Trash2Icon,
+} from "lucide-react";
 import {
   lazy,
   Suspense,
@@ -72,9 +79,14 @@ import {
 } from "../../sidebarProjectGrouping";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useProjects, useThreadShells } from "../../state/entities";
+import { filesystemEnvironment } from "../../state/filesystem";
+import { isMissingDirectoryBrowseError } from "@t3tools/client-runtime/state/filesystem";
 import { projectEnvironment } from "../../state/projects";
+import { useEnvironmentQuery } from "../../state/query";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { browsePlatformFromOs } from "../../lib/utils";
+import { ensureBrowseDirectoryPath } from "../../lib/projectPaths";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { ProjectFavicon } from "../ProjectFavicon";
@@ -119,6 +131,8 @@ import {
   canPickExternalProjectFavicon,
   ProjectFaviconPickerDialog,
 } from "./ProjectFaviconPickerDialog";
+import { ProjectFolderPickerDialog } from "./ProjectFolderPickerDialog";
+import { workspaceRootFailureMessage } from "./ProjectFolderPickerDialog.logic";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
 
 const ProjectIconPickerDialog = lazy(() =>
@@ -259,25 +273,29 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
 
   const selected = groups.find((group) => group.projectKey === projectKey) ?? null;
 
-  // Remember the members of the last rendered group so a grouping-rule change
-  // (which changes the group key) can follow the project to its new group.
-  const lastSelectionRef = useRef<{ key: string; memberKeys: string[] } | null>(null);
+  // Remember the members of the last rendered group so a change that replaces
+  // the group key mid-visit (a grouping rule, or a folder change) can follow
+  // the project to its new group. Members are remembered by id, not by the
+  // path-derived physical key: changing a project's folder changes that key,
+  // and the project must still be found afterwards.
+  const lastSelectionRef = useRef<{ key: string; memberIds: string[] } | null>(null);
   useEffect(() => {
     if (!selected) return;
     lastSelectionRef.current = {
       key: selected.projectKey,
-      memberKeys: selected.memberProjects.map((member) => member.physicalProjectKey),
+      memberIds: selected.memberProjects.map((member) => `${member.environmentId}:${member.id}`),
     };
   }, [selected]);
 
-  // A grouping-rule change replaces the group key mid-visit; follow the
-  // project to its new key instead of parking on the not-found state.
+  // A grouping-rule or folder change replaces the group key mid-visit; follow
+  // the project to its new key instead of parking on the not-found state.
   useEffect(() => {
     if (selected !== null) return;
     const last = lastSelectionRef.current;
     if (last?.key !== projectKey) return;
+    const memberIds = new Set(last.memberIds);
     const successor = groups.find((group) =>
-      group.memberProjects.some((member) => last.memberKeys.includes(member.physicalProjectKey)),
+      group.memberProjects.some((member) => memberIds.has(`${member.environmentId}:${member.id}`)),
     );
     if (successor) {
       void navigate({
@@ -289,6 +307,15 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
     }
   }, [groups, navigate, projectKey, selected]);
 
+  // A folder change replaces the group key, which remounts ProjectDetail. The
+  // path it replaced has to outlive that remount or there would be no way back.
+  const [previousWorkspaceRootByProjectId, setPreviousWorkspaceRootByProjectId] = useState<
+    Readonly<Record<string, string>>
+  >({});
+  const rememberPreviousWorkspaceRoot = useCallback((projectId: string, previousPath: string) => {
+    setPreviousWorkspaceRootByProjectId((current) => ({ ...current, [projectId]: previousPath }));
+  }, []);
+
   if (!selected) {
     return (
       <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
@@ -298,10 +325,22 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
       </div>
     );
   }
-  return <ProjectDetail key={selected.projectKey} group={selected} />;
+  return (
+    <ProjectDetail
+      key={selected.projectKey}
+      group={selected}
+      previousWorkspaceRootByProjectId={previousWorkspaceRootByProjectId}
+      onWorkspaceRootChanged={rememberPreviousWorkspaceRoot}
+    />
+  );
 }
 
-function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
+function ProjectDetail(props: {
+  readonly group: SidebarProjectSnapshot;
+  readonly previousWorkspaceRootByProjectId: Readonly<Record<string, string>>;
+  readonly onWorkspaceRootChanged: (projectId: string, previousPath: string) => void;
+}) {
+  const { group } = props;
   const navigate = useNavigate();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const representative =
@@ -363,17 +402,21 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     }
     return counts;
   }, [threads]);
-  const reportFailure = useCallback((title: string, result: AtomCommandResult<void, unknown>) => {
-    if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
-    const error = squashAtomCommandFailure(result);
-    toastManager.add(
-      stackedThreadToast({
-        type: "error",
-        title,
-        description: error instanceof Error ? error.message : "An error occurred.",
-      }),
-    );
-  }, []);
+  const reportFailure = useCallback(
+    (title: string, result: AtomCommandResult<void, unknown>, description?: string | null) => {
+      if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title,
+          description:
+            description ?? (error instanceof Error ? error.message : "An error occurred."),
+        }),
+      );
+    },
+    [],
+  );
 
   // Group-shared fields live on each physical project record, so a
   // group-level edit fans out to every member.
@@ -510,6 +553,32 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   const selectedCheckout =
     group.memberProjects.find((member) => member.physicalProjectKey === selectedCheckoutKey) ??
     representative;
+  // A project keeps every setting it had across a folder change, so the picker
+  // is the only way its checkout root moves. The replaced path is kept by the
+  // panel above, which survives the group-key change the move causes.
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  const [isChangingFolder, setIsChangingFolder] = useState(false);
+  const changingFolderRef = useRef(false);
+  const previousWorkspaceRoot =
+    props.previousWorkspaceRootByProjectId[
+      `${selectedCheckout.environmentId}:${selectedCheckout.id}`
+    ] ?? null;
+  const selectedCheckoutPlatform = browsePlatformFromOs(
+    useEnvironments().environments.find(
+      (candidate) => candidate.environmentId === selectedCheckout.environmentId,
+    )?.serverConfig?.environment.platform.os,
+  );
+  // A trailing separator makes the server list the root itself, so a
+  // read failure here means "this folder is gone" rather than "this folder is
+  // empty". An unreachable environment fails the same request differently and
+  // must not be reported as a folder the user needs to re-link.
+  const workspaceRootProbe = useEnvironmentQuery(
+    filesystemEnvironment.browse({
+      environmentId: selectedCheckout.environmentId,
+      input: { partialPath: ensureBrowseDirectoryPath(selectedCheckout.workspaceRoot) },
+    }),
+  );
+  const workspaceRootIsMissing = isMissingDirectoryBrowseError(workspaceRootProbe.cause);
   const selectedServerConfig = useAtomValue(
     serverEnvironment.configValueAtom(selectedCheckout.environmentId),
   );
@@ -696,6 +765,48 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   );
 
   // ----- checkouts -----
+  /**
+   * Re-point a checkout at another folder. This is deliberately per-checkout
+   * and not part of the group fan-out: a folder is one machine's directory, so
+   * a grouped project's members each own theirs.
+   */
+  const changeCheckoutFolder = useCallback(
+    async (member: SidebarProjectGroupMember, workspaceRoot: string) => {
+      if (changingFolderRef.current) return;
+      changingFolderRef.current = true;
+      setIsChangingFolder(true);
+      try {
+        const result = mapAtomCommandResult(
+          await updateProject({
+            environmentId: member.environmentId,
+            input: { projectId: member.id, workspaceRoot },
+          }),
+          () => undefined,
+        );
+        if (result._tag === "Failure") {
+          const error = squashAtomCommandFailure(result);
+          reportFailure(
+            "Failed to change project folder",
+            result,
+            workspaceRootFailureMessage(error),
+          );
+          return;
+        }
+        props.onWorkspaceRootChanged(`${member.environmentId}:${member.id}`, member.workspaceRoot);
+        setFolderPickerOpen(false);
+        toastManager.add({
+          type: "success",
+          title: "Folder changed",
+          description: workspaceRoot,
+        });
+      } finally {
+        changingFolderRef.current = false;
+        setIsChangingFolder(false);
+      }
+    },
+    [props.onWorkspaceRootChanged, reportFailure, updateProject],
+  );
+
   const updateGroupingPreference = useCallback(
     (member: SidebarProjectGroupMember, selection: SidebarProjectGroupingMode | "inherit") => {
       const overrideKey = deriveProjectGroupingOverrideKey(member);
@@ -1055,6 +1166,53 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               </div>
             </div>
           </div>
+          <SettingsRow
+            title="Folder"
+            description={
+              workspaceRootIsMissing
+                ? "This folder no longer exists on the environment that runs this checkout. Pick where the project lives now."
+                : "The folder this checkout reads and writes. Moving it here does not move files on disk."
+            }
+            status={
+              workspaceRootIsMissing ? (
+                <span className="text-warning">Folder not found.</span>
+              ) : undefined
+            }
+            control={
+              <div className="flex items-center gap-2">
+                {previousWorkspaceRoot !== null ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={isChangingFolder}
+                    onClick={() =>
+                      void changeCheckoutFolder(selectedCheckout, previousWorkspaceRoot)
+                    }
+                  >
+                    Undo
+                  </Button>
+                ) : null}
+                <Button
+                  size="sm"
+                  variant={workspaceRootIsMissing ? "default" : "outline"}
+                  disabled={isChangingFolder}
+                  onClick={() => setFolderPickerOpen(true)}
+                >
+                  <FolderIcon className="size-3.5" />
+                  {workspaceRootIsMissing ? "Choose a folder…" : "Change folder…"}
+                </Button>
+              </div>
+            }
+          />
+          <ProjectFolderPickerDialog
+            currentPath={selectedCheckout.workspaceRoot}
+            environmentId={selectedCheckout.environmentId}
+            onClose={() => setFolderPickerOpen(false)}
+            onSelect={(workspaceRoot) => void changeCheckoutFolder(selectedCheckout, workspaceRoot)}
+            open={folderPickerOpen}
+            platform={selectedCheckoutPlatform}
+            projectName={group.displayName}
+          />
           <SettingsRow
             title="Project grouping"
             description="How this checkout joins project groups in the sidebar. Changing it can move you to a different project group."

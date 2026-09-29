@@ -16,6 +16,24 @@ export function isWindowsPlatform(platform: string): boolean {
   return /^win(dows)?/i.test(platform);
 }
 
+/**
+ * Path helpers read the host OS as a navigator-style platform string. An
+ * environment reports `windows`/`darwin`/`linux`, and a remote environment's
+ * paths must be parsed against the remote OS rather than the client's.
+ */
+export function browsePlatformFromOs(os: string | null | undefined): string {
+  if (os === "windows") {
+    return "Win32";
+  }
+  if (os === "darwin") {
+    return "MacIntel";
+  }
+  if (os === "linux") {
+    return "Linux";
+  }
+  return typeof navigator === "undefined" ? "" : navigator.platform;
+}
+
 export function normalizeSearchText(value: string): string {
   return value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
 }

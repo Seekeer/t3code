@@ -5,6 +5,7 @@ import {
   createBrowseNavigationCoordinator,
   filterFilesystemBrowseEntries,
   getFilesystemBrowsePath,
+  isMissingDirectoryBrowseError,
 } from "./filesystem.ts";
 
 describe("filesystem browse model", () => {
@@ -66,5 +67,33 @@ describe("browse navigation", () => {
     expect(canPreloadBrowsePath("offline")).toBe(false);
     expect(canPreloadBrowsePath("reconnecting")).toBe(false);
     expect(canPreloadBrowsePath(null)).toBe(false);
+  });
+});
+
+describe("isMissingDirectoryBrowseError", () => {
+  it("reports a directory the environment could not read as missing", () => {
+    expect(
+      isMissingDirectoryBrowseError({
+        _tag: "FilesystemBrowseError",
+        failure: "read_directory_failed",
+        partialPath: "/home/me/moved-away",
+      }),
+    ).toBe(true);
+  });
+
+  it("does not blame the folder when the environment answered for another reason", () => {
+    expect(
+      isMissingDirectoryBrowseError({
+        _tag: "FilesystemBrowseError",
+        failure: "current_project_required",
+      }),
+    ).toBe(false);
+  });
+
+  it("does not blame the folder when the environment was never reached", () => {
+    expect(isMissingDirectoryBrowseError(new Error("environment is offline"))).toBe(false);
+    expect(isMissingDirectoryBrowseError({ _tag: "EnvironmentAuthorizationError" })).toBe(false);
+    expect(isMissingDirectoryBrowseError(null)).toBe(false);
+    expect(isMissingDirectoryBrowseError("nope")).toBe(false);
   });
 });

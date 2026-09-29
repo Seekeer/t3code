@@ -1855,12 +1855,28 @@ export class OrchestrationGetSnapshotError extends Schema.TaggedErrorClass<Orche
   },
 ) {}
 
+/**
+ * Why a command carrying a workspace root was rejected before it reached the
+ * decider. Clients use it to keep the explanation next to the control that
+ * submitted the path: a folder the user just picked is a re-link prompt, not a
+ * generic failure toast.
+ */
+export const WorkspaceRootFailure = Schema.Literals([
+  "workspace_root_not_exists",
+  "workspace_root_not_directory",
+  "workspace_root_stat_failed",
+  "workspace_root_create_failed",
+]);
+export type WorkspaceRootFailure = typeof WorkspaceRootFailure.Type;
+
 export class OrchestrationDispatchCommandError extends Schema.TaggedErrorClass<OrchestrationDispatchCommandError>()(
   "OrchestrationDispatchCommandError",
   {
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect()),
     bootstrapThreadDisposition: Schema.optional(Schema.Literal("deleted")),
+    // Optional so a client that predates this field still decodes the failure.
+    workspaceRootFailure: Schema.optional(WorkspaceRootFailure),
   },
 ) {}
 

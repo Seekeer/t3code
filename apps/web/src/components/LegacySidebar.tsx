@@ -24,6 +24,8 @@ import {
 } from "./ThreadStatusIndicators";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { ProjectFavicon } from "./ProjectFavicon";
+import { ProjectFolderPickerDialog } from "./settings/ProjectFolderPickerDialog";
+import { workspaceRootFailureMessage } from "./settings/ProjectFolderPickerDialog.logic";
 import { useAtomValue } from "@effect/atom-react";
 import { autoAnimate } from "@formkit/auto-animate";
 import React, { useCallback, useEffect, memo, useMemo, useRef, useState } from "react";
@@ -80,7 +82,7 @@ import { useTerminalFocus } from "../hooks/useTerminalFocus";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { releaseProjectDraftUploads } from "../lib/composerDraftUploads";
 import { isTerminalFocused } from "../lib/terminalFocus";
-import { isMacPlatform } from "../lib/utils";
+import { browsePlatformFromOs, isMacPlatform } from "../lib/utils";
 import {
   readThreadShell,
   useProject,
@@ -1258,6 +1260,16 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const [projectRenameTitle, setProjectRenameTitle] = useState("");
   const [projectGroupingTarget, setProjectGroupingTarget] =
     useState<SidebarProjectGroupMember | null>(null);
+  const [projectFolderTarget, setProjectFolderTarget] = useState<SidebarProjectGroupMember | null>(
+    null,
+  );
+  const { environments } = useEnvironments();
+  // A remote project's paths belong to its own machine, so the picker has to
+  // parse them against that environment's OS rather than the client's.
+  const projectFolderTargetPlatform = browsePlatformFromOs(
+    environments.find((candidate) => candidate.environmentId === projectFolderTarget?.environmentId)
+      ?.serverConfig?.environment.platform.os,
+  );
   const [projectGroupingSelection, setProjectGroupingSelection] = useState<
     SidebarProjectGroupingMode | "inherit"
   >("inherit");
@@ -1653,7 +1665,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
         const actionHandlers = new Map<string, () => Promise<void> | void>();
         const makeLeaf = (
-          action: "rename" | "grouping" | "copy-path" | "delete",
+          action: "rename" | "grouping" | "copy-path" | "change-folder" | "delete",
           member: SidebarProjectGroupMember,
           options?: {
             destructive?: boolean;
@@ -1672,6 +1684,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               case "copy-path":
                 copyPathToClipboard(member.workspaceRoot, { path: member.workspaceRoot });
                 return;
+              case "change-folder":
+                setProjectFolderTarget(member);
+                return;
               case "delete":
                 return handleRemoveProject(member);
             }
@@ -1686,7 +1701,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         };
 
         const buildTargetedItem = (
-          action: "rename" | "grouping" | "copy-path" | "delete",
+          action: "rename" | "grouping" | "copy-path" | "change-folder" | "delete",
           label: string,
           options?: {
             destructive?: boolean;
@@ -1702,6 +1717,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               }),
               label,
               ...(action === "delete" ? { icon: "trash" } : {}),
+              ...(action === "change-folder" ? { icon: "folder" } : {}),
             };
           }
 
@@ -1709,6 +1725,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             id: `${action}:submenu`,
             label,
             ...(action === "delete" ? { icon: "trash" } : {}),
+            ...(action === "change-folder" ? { icon: "folder" } : {}),
             children: project.memberProjects.map((member) =>
               makeLeaf(action, member, {
                 ...(options?.destructive ? { destructive: true } : {}),
@@ -1723,6 +1740,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             buildTargetedItem("rename", "Rename"),
             buildTargetedItem("grouping", "Group into..."),
             buildTargetedItem("copy-path", "Copy Path"),
+            buildTargetedItem("change-folder", "Change Folder..."),
             buildTargetedItem("delete", "Remove", {
               destructive: true,
             }),
@@ -2137,6 +2155,38 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     }
   }, [closeProjectRenameDialog, projectRenameTarget, projectRenameTitle, updateProject]);
 
+  const submitProjectFolderChange = useCallback(
+    async (workspaceRoot: string) => {
+      if (!projectFolderTarget) {
+        return;
+      }
+
+      const result = await updateProject({
+        environmentId: projectFolderTarget.environmentId,
+        input: {
+          projectId: projectFolderTarget.id,
+          workspaceRoot,
+        },
+      });
+      if (result._tag === "Success") {
+        setProjectFolderTarget(null);
+        toastManager.add({ type: "success", title: "Folder changed", description: workspaceRoot });
+      } else if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to change project folder",
+            description:
+              workspaceRootFailureMessage(error) ??
+              (error instanceof Error ? error.message : "An error occurred."),
+          }),
+        );
+      }
+    },
+    [projectFolderTarget, updateProject],
+  );
+
   const closeProjectGroupingDialog = useCallback(() => {
     setProjectGroupingTarget(null);
     setProjectGroupingSelection("inherit");
@@ -2496,6 +2546,18 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           </DialogFooter>
         </DialogPopup>
       </Dialog>
+
+      {projectFolderTarget ? (
+        <ProjectFolderPickerDialog
+          currentPath={projectFolderTarget.workspaceRoot}
+          environmentId={projectFolderTarget.environmentId}
+          onClose={() => setProjectFolderTarget(null)}
+          onSelect={(workspaceRoot) => void submitProjectFolderChange(workspaceRoot)}
+          open
+          platform={projectFolderTargetPlatform}
+          projectName={projectFolderTarget.title}
+        />
+      ) : null}
 
       <Dialog
         open={projectGroupingTarget !== null}

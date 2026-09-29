@@ -8,6 +8,7 @@ import {
   type OrchestrationCommand,
   OrchestrationDispatchCommandError,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  type WorkspaceRootFailure,
 } from "@t3tools/contracts";
 
 import {
@@ -20,6 +21,27 @@ import {
 import { ServerConfig } from "../config.ts";
 import { parseBase64DataUrl } from "../imageMime.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+
+/**
+ * Projects can be re-pointed at a new folder, so a rejected workspace root is an
+ * expected outcome the client explains inline, not an opaque dispatch failure.
+ */
+function workspaceRootFailureFor(
+  error: WorkspacePaths.WorkspacePathsError,
+): WorkspaceRootFailure | undefined {
+  switch (error._tag) {
+    case "WorkspaceRootNotExistsError":
+      return "workspace_root_not_exists";
+    case "WorkspaceRootNotDirectoryError":
+      return "workspace_root_not_directory";
+    case "WorkspaceRootStatFailedError":
+      return "workspace_root_stat_failed";
+    case "WorkspaceRootCreateFailedError":
+      return "workspace_root_create_failed";
+    case "WorkspacePathOutsideRootError":
+      return undefined;
+  }
+}
 
 export const canonicalizeClientCommandTimestamps = (
   command: ClientOrchestrationCommand,
@@ -87,6 +109,7 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
           (cause) =>
             new OrchestrationDispatchCommandError({
               message: cause.message,
+              workspaceRootFailure: workspaceRootFailureFor(cause),
             }),
         ),
       );
@@ -104,6 +127,7 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
             (cause) =>
               new OrchestrationDispatchCommandError({
                 message: cause.message,
+                workspaceRootFailure: workspaceRootFailureFor(cause),
               }),
           ),
         );

@@ -9,6 +9,11 @@ const EMPTY_ASYNC_RESULT_ATOM = Atom.make(AsyncResult.initial<never, never>(fals
 
 export interface EnvironmentQueryView<A> {
   readonly data: A | null;
+  /**
+   * The squashed failure, for callers that need the error's structured fields
+   * rather than its message. `error` is the same failure, flattened for display.
+   */
+  readonly cause: unknown | null;
   readonly error: string | null;
   readonly isPending: boolean;
   readonly refresh: () => void;
@@ -29,6 +34,7 @@ export function useEnvironmentQuery<A, E>(
   const refresh = useAtomRefresh(selectedAtom);
   return {
     data: Option.getOrNull(AsyncResult.value(result)),
+    cause: result._tag === "Failure" ? Cause.squash(result.cause) : null,
     error: result._tag === "Failure" ? formatError(result.cause) : null,
     isPending: atom !== null && result.waiting,
     refresh,
