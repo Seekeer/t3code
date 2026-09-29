@@ -71,6 +71,21 @@ export function canPreloadBrowsePath(
   return connectionPhase === "connected";
 }
 
+/**
+ * True only when the environment answered and reported that it could not read
+ * the directory.
+ *
+ * An unreachable environment fails the same request in a different shape.
+ * Calling that a missing folder would send the user hunting for a problem they
+ * do not have, so the two stay separate.
+ */
+export function isMissingDirectoryBrowseError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("_tag" in error) || !("failure" in error)) {
+    return false;
+  }
+  return error._tag === "FilesystemBrowseError" && error.failure === "read_directory_failed";
+}
+
 export function createFilesystemEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {

@@ -7,7 +7,7 @@ import {
 } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { useEffect, useRef } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "../../lib/cn";
@@ -175,6 +175,32 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
     );
   }, [incomingShare, isFocused, navigation, reservedDestinationProject]);
 
+  /**
+   * A project whose folder was moved or renamed is still listed here with a
+   * path that no longer resolves. A long press shows where it points and leads
+   * straight to picking a new one, so the entry point for a re-link is the row
+   * that is already wrong rather than a settings screen mobile does not have.
+   */
+  const openProjectFolderActions = useCallback(
+    (project: EnvironmentProject) => {
+      Alert.alert(project.title, project.workspaceRoot, [
+        {
+          text: "Change Folder...",
+          onPress: () => {
+            navigation.dispatch(
+              StackActions.push("ChangeProjectFolder", {
+                environmentId: project.environmentId,
+                projectId: project.id,
+              }),
+            );
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    },
+    [navigation],
+  );
+
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
       {Platform.OS === "android" ? (
@@ -281,6 +307,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                   <Pressable
                     disabled={reservedDestinationProject !== null}
                     onPress={() => void selectProject(selectionTarget)}
+                    onLongPress={() => openProjectFolderActions(selectionTarget)}
                     className="flex-row items-center gap-3 bg-card px-4 py-3.5"
                   >
                     <View className="h-7 w-7 items-center justify-center">

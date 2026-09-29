@@ -29,3 +29,35 @@ untracked files, or local commits.
 
 The pull is skipped if the checkout is on another branch, has no upstream, or contains local work.
 Pull failures do not prevent the server from starting.
+
+## Change the folder a project points at
+
+A project's folder is not fixed when you add it. If you move or rename the folder outside T3 Code,
+or you picked the wrong directory the first time, you can point the project somewhere else.
+
+To change it:
+
+1. Right-click the project in the sidebar and select **Change Folder...**, or open **Settings**,
+   select the project, and in the **Checkout** section select **Change folder...**.
+2. Type a path or browse to the folder. Browsing lists folders on the machine that runs the
+   project, so a project on a remote or tunneled environment shows that machine's folders.
+3. Select **Use folder**.
+
+Everything a project owns stays with it: its name, icon, threads, conversation history, and
+per-project settings. T3 Code does not move, copy, or delete any files on disk. After a change, the
+path that was replaced is offered as **Undo** on the same screen.
+
+In a project group, each checkout has its own folder, so you change them one at a time using the
+checkout selector.
+
+The folder has to already exist. If it does not, T3 Code keeps the dialog open and explains why.
+
+### When the folder is missing
+
+If the folder is moved or deleted outside T3 Code, the project still appears in the sidebar and
+project settings still show its last known path. Open the project's settings and the **Checkout**
+section reports **Folder not found** and offers **Choose a folder...** to point the project at its
+new location. Its threads and history are intact; only the path was wrong.
+
+On mobile, press and hold the project in the project list to see its current folder and choose
+**Change Folder...**.

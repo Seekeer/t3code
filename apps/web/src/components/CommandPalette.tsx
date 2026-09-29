@@ -105,6 +105,7 @@ import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { getLatestThreadForProject, sortThreads } from "../lib/threadSort";
 import {
   cn,
+  browsePlatformFromOs,
   getLocalFileManagerName,
   isMacPlatform,
   isWindowsPlatform,
@@ -188,19 +189,6 @@ function projectFavicon(project: Project) {
       className="size-4"
     />
   );
-}
-
-function getEnvironmentBrowsePlatform(os: string | null | undefined): string {
-  if (os === "windows") {
-    return "Win32";
-  }
-  if (os === "darwin") {
-    return "MacIntel";
-  }
-  if (os === "linux") {
-    return "Linux";
-  }
-  return typeof navigator === "undefined" ? "" : navigator.platform;
 }
 
 interface AddProjectEnvironmentOption {
@@ -897,7 +885,7 @@ function OpenCommandPaletteDialog(props: {
           input: {},
         }),
   );
-  const browseEnvironmentPlatform = getEnvironmentBrowsePlatform(
+  const browseEnvironmentPlatform = browsePlatformFromOs(
     browseEnvironment?.serverConfig?.environment.platform.os,
   );
   const isRemoteProjectCloneFlow = addProjectCloneFlow !== null;

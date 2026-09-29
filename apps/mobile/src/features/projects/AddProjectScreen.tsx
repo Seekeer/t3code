@@ -49,7 +49,7 @@ import * as Order from "effect/Order";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { cn } from "../../lib/cn";
 
-import { useProjects, useServerConfigs } from "../../state/entities";
+import { useProject, useProjects, useServerConfigs } from "../../state/entities";
 import { filesystemEnvironment } from "../../state/filesystem";
 import { projectEnvironment } from "../../state/projects";
 import { useEnvironmentQuery } from "../../state/query";
@@ -66,7 +66,10 @@ import {
   useRemoteEnvironmentRuntime,
   useSavedRemoteConnections,
 } from "../../state/use-remote-environment-registry";
-import { resolveAddProjectEnvironment } from "./AddProjectScreen.logic";
+import {
+  resolveAddProjectEnvironment,
+  resolveProjectFolderReLinkSeed,
+} from "./AddProjectScreen.logic";
 
 interface EnvironmentOption {
   readonly environmentId: EnvironmentId;
@@ -252,9 +255,15 @@ function ProjectPathInput(props: {
 // `pinnedDirectoryName` is the repository folder the clone destination keeps
 // appended to whatever folder the user browses to. The plain add-project flow
 // passes nothing, so it keeps proposing the browsed folder itself.
-function useBrowsePathInput(environment: EnvironmentOption | null, pinnedDirectoryName = "") {
+// `initialDirectoryPath` overrides the environment's own base directory, which
+// the re-link flow needs so it can open on the project's current folder.
+function useBrowsePathInput(
+  environment: EnvironmentOption | null,
+  pinnedDirectoryName = "",
+  initialDirectoryPath: string | null = null,
+) {
   const environmentId = environment?.environmentId ?? null;
-  const environmentBaseDirectory = environment?.baseDirectory ?? null;
+  const environmentBaseDirectory = initialDirectoryPath ?? environment?.baseDirectory ?? null;
   const clonePathCaseSensitive = !isWindowsPlatform(environment?.platform ?? "");
   const [pathInput, commitPathInput] = useState(() =>
     getCloneDestinationPath(
@@ -880,6 +889,123 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
           />
           <PrimaryActionButton
             label="Add project"
+            disabled={isBrowseNavigating || isSubmitting}
+            onPress={() => void submitPath()}
+            loading={isSubmitting}
+          />
+          <FolderBrowser
+            environment={environment}
+            navigateToBrowsePath={navigateToBrowsePath}
+            pathInput={pathInput}
+            setPathInput={setPathInput}
+          />
+        </>
+      ) : (
+        <EmptyEnvironmentState />
+      )}
+    </AddProjectShell>
+  );
+}
+
+/**
+ * Re-point an existing project at another folder.
+ *
+ * Everything a project owns — name, icon, threads, per-project settings —
+ * hangs off its id rather than its path, so this is a metadata write and the
+ * conversation history survives the move. The environment is the one that
+ * already runs the project, so browsing here lists that machine's filesystem.
+ */
+export function ChangeProjectFolderScreen(props: {
+  readonly environmentId?: string | string[];
+  readonly projectId?: string | string[];
+}) {
+  const navigation = useNavigation();
+  const environment = useEnvironmentFromParam(props.environmentId);
+  const projectId = stringParam(props.projectId);
+  const project = useProject(
+    projectId === null || environment === null
+      ? null
+      : { environmentId: environment.environmentId, projectId: ProjectId.make(projectId) },
+  );
+  const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
+  const seed = useMemo(
+    () => resolveProjectFolderReLinkSeed(project?.workspaceRoot ?? ""),
+    [project?.workspaceRoot],
+  );
+  const { isBrowseNavigating, navigateToBrowsePath, pathInput, setPathInput } = useBrowsePathInput(
+    environment,
+    seed.pinnedDirectoryName,
+    seed.initialDirectoryPath,
+  );
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submitPath = useCallback(async () => {
+    if (!environment || !project || isBrowseNavigating || isSubmitting) return;
+    setError(null);
+    const resolved = resolveAddProjectPath({
+      rawPath: pathInput,
+      currentProjectCwd: null,
+      platform: environment.platform,
+    });
+    if (!resolved.ok) {
+      setError(resolved.error);
+      return;
+    }
+
+    setIsSubmitting(true);
+    const result = await updateProject({
+      environmentId: environment.environmentId,
+      input: { projectId: project.id, workspaceRoot: resolved.path },
+    });
+    if (AsyncResult.isFailure(result)) {
+      setError(errorMessage(Cause.squash(result.cause)));
+      setIsSubmitting(false);
+      return;
+    }
+    navigation.goBack();
+  }, [
+    environment,
+    isBrowseNavigating,
+    isSubmitting,
+    navigation,
+    pathInput,
+    project,
+    updateProject,
+  ]);
+
+  return (
+    <AddProjectShell>
+      {error ? <ErrorBanner message={error} /> : null}
+      {environment && project ? (
+        <>
+          <SectionTitle>Current folder</SectionTitle>
+          <ListSection>
+            <ListRow
+              isFirst
+              title={project.title}
+              subtitle={project.workspaceRoot}
+              icon={
+                <SymbolView
+                  name="folder"
+                  size={17}
+                  tintColorClassName={"accent-icon-muted"}
+                  type="monochrome"
+                />
+              }
+              right={null}
+              onPress={() => {
+                setPathInput(project.workspaceRoot);
+              }}
+            />
+          </ListSection>
+          <ProjectPathInput
+            value={pathInput}
+            onChangeText={setPathInput}
+            onSubmit={() => void submitPath()}
+          />
+          <PrimaryActionButton
+            label="Change folder"
             disabled={isBrowseNavigating || isSubmitting}
             onPress={() => void submitPath()}
             loading={isSubmitting}
