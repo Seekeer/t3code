@@ -14,8 +14,10 @@ export interface EnvironmentQueryView<A> {
    * rather than its message. `error` is the same failure, flattened for display.
    */
   readonly cause: unknown | null;
+  readonly dataUpdatedAt: number | null;
   readonly error: string | null;
   readonly isPending: boolean;
+  readonly isSuccess: boolean;
   readonly refresh: () => void;
 }
 
@@ -35,8 +37,10 @@ export function useEnvironmentQuery<A, E>(
   return {
     data: Option.getOrNull(AsyncResult.value(result)),
     cause: result._tag === "Failure" ? Cause.squash(result.cause) : null,
+    dataUpdatedAt: result._tag === "Success" ? result.timestamp : null,
     error: result._tag === "Failure" ? formatEnvironmentQueryError(result.cause) : null,
     isPending: atom !== null && result.waiting,
+    isSuccess: result._tag === "Success",
     refresh,
   };
 }
