@@ -175,7 +175,7 @@ function ProjectFolderPickerBody(props: {
   return (
     <CommandDialogPopup
       aria-label={ariaLabel}
-      className="overflow-hidden p-0"
+      className="overflow-hidden"
       onBackdropPointerDown={onClose}
     >
       <CommandPaletteContent
@@ -191,7 +191,7 @@ function ProjectFolderPickerBody(props: {
                   variant="outline"
                   size="xs"
                   tabIndex={-1}
-                  className="absolute inset-e-2.5 top-1/2 pe-1 ps-2 -translate-y-1/2"
+                  className="absolute inset-e-2.5 top-1/2 -translate-y-1/2"
                   aria-label="Use folder (Enter)"
                   disabled={!canSubmitSelection}
                   onMouseDown={(event) => {
@@ -202,7 +202,7 @@ function ProjectFolderPickerBody(props: {
               }
             >
               <span>{selection.ok ? "Use folder" : "Invalid path"}</span>
-              <KbdGroup className="pointer-events-none -me-0.5 items-center gap-1">
+              <KbdGroup className="pointer-events-none -me-0.5">
                 <Kbd>Enter</Kbd>
               </KbdGroup>
             </TooltipTrigger>
@@ -220,7 +220,7 @@ function ProjectFolderPickerBody(props: {
           setHighlightedItemValue(null);
           setQuery(value);
         }}
-        panelClassName="max-h-[min(34rem,76vh)]"
+        panelSize="tall-list"
         testId="project-folder-picker"
         value={query}
       >
