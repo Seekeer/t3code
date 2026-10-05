@@ -16,6 +16,7 @@ import {
 } from "./runtime.ts";
 import {
   type ArchiveThreadInput,
+  type CreateConversationBranchInput,
   type CreateThreadInput,
   type DeleteThreadInput,
   type InterruptThreadTurnInput,
@@ -41,6 +42,7 @@ import {
   type UnsnoozeThreadInput,
   type UpdateThreadMetadataInput,
   archiveThread,
+  createConversationBranch,
   createThread,
   deleteThread,
   interruptThreadTurn,
@@ -70,6 +72,7 @@ import type { EnvironmentRegistry } from "../connection/registry.ts";
 
 export type {
   ArchiveThreadInput,
+  CreateConversationBranchInput,
   CreateThreadInput,
   DeleteThreadInput,
   InterruptThreadTurnInput,
@@ -116,6 +119,12 @@ export function createThreadEnvironmentAtoms<R, E>(
     delete: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:delete",
       execute: (input: DeleteThreadInput) => deleteThread(input),
+      scheduler,
+      concurrency,
+    }),
+    createBranch: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:create-branch",
+      execute: (input: CreateConversationBranchInput) => createConversationBranch(input),
       scheduler,
       concurrency,
     }),

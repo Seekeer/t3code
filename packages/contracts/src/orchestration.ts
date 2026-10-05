@@ -571,6 +571,17 @@ export const OrchestrationMessageRole = Schema.Literals([
 ]);
 export type OrchestrationMessageRole = typeof OrchestrationMessageRole.Type;
 
+/** How an agent reply ended. `streaming: false` alone only says the text stopped
+ *  arriving, which a failed or interrupted turn also does, so branching reads
+ *  this instead. Absent means the message never reached a settled outcome and
+ *  is not branchable. */
+export const OrchestrationMessageCompletion = Schema.Literals([
+  "completed",
+  "interrupted",
+  "failed",
+]);
+export type OrchestrationMessageCompletion = typeof OrchestrationMessageCompletion.Type;
+
 export const OrchestrationMessage = Schema.Struct({
   id: MessageId,
   role: OrchestrationMessageRole,
@@ -579,6 +590,7 @@ export const OrchestrationMessage = Schema.Struct({
   context: Schema.optional(OrchestrationMessageContext),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
+  completion: Schema.optional(OrchestrationMessageCompletion),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -790,6 +802,33 @@ export const ThreadPullRequestLink = Schema.Struct({
 });
 export type ThreadPullRequestLink = typeof ThreadPullRequestLink.Type;
 
+/** How a branch hands its inherited prefix to the provider. `text-context` is
+ *  the disclosed fallback: the copied roles and order ride along with the first
+ *  new prompt instead of arriving as provider-native conversation state. */
+export const ThreadBranchStrategy = Schema.Literals(["text-context"]);
+export type ThreadBranchStrategy = typeof ThreadBranchStrategy.Type;
+
+/** Whether the provider has taken the inherited text. `pending` survives a
+ *  restart and a failed first turn, so the required context is re-supplied until
+ *  the provider accepts it once. */
+export const ThreadBranchInheritedContextState = Schema.Literals(["pending", "accepted"]);
+export type ThreadBranchInheritedContextState = typeof ThreadBranchInheritedContextState.Type;
+
+/** Where a branch came from. The copied prefix is exactly the first
+ *  `inheritedMessageCount` messages of this thread, so the continuation context
+ *  is derived from them rather than stored twice. The source survives its own
+ *  deletion; clients resolve availability against the thread shell. */
+export const ThreadBranchProvenance = Schema.Struct({
+  sourceThreadId: ThreadId,
+  sourceThreadTitle: TrimmedNonEmptyString,
+  sourceMessageId: MessageId,
+  strategy: ThreadBranchStrategy,
+  inheritedMessageCount: NonNegativeInt,
+  inheritedContextState: ThreadBranchInheritedContextState,
+  createdAt: IsoDateTime,
+});
+export type ThreadBranchProvenance = typeof ThreadBranchProvenance.Type;
+
 export const OrchestrationThread = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
@@ -807,6 +846,9 @@ export const OrchestrationThread = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
+  // Set when this thread was branched off a completed reply in another thread.
+  // Optional so payloads from pre-branch servers still decode.
+  branchedFrom: Schema.optional(Schema.NullOr(ThreadBranchProvenance)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -897,6 +939,9 @@ export const OrchestrationThreadShell = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
+  // See OrchestrationThread.branchedFrom. Repeated in the shell because mobile
+  // renders thread headers from shells alone. Provenance, not a transcript.
+  branchedFrom: Schema.optional(Schema.NullOr(ThreadBranchProvenance)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -1138,6 +1183,25 @@ const ThreadDeleteCommand = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
 });
+
+/**
+ * Create a conversation branch: a new idle thread in the source thread's
+ * project, holding the user/agent messages through one completed reply.
+ *
+ * The client names the destination id so a retried request resolves to the same
+ * command receipt and therefore the same branch. Everything else about the
+ * branch - title, project, model, provider instance, workspace - is decided by
+ * the server from the source, so a client cannot point a branch elsewhere.
+ */
+const ThreadBranchCreateCommand = Schema.Struct({
+  type: Schema.Literal("thread.branch.create"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  sourceThreadId: ThreadId,
+  sourceMessageId: MessageId,
+  createdAt: IsoDateTime,
+});
+export type ThreadBranchCreateCommand = typeof ThreadBranchCreateCommand.Type;
 
 const ThreadArchiveCommand = Schema.Struct({
   type: Schema.Literal("thread.archive"),
@@ -1429,6 +1493,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
   ThreadCreateCommand,
+  ThreadBranchCreateCommand,
   ThreadDeleteCommand,
   ThreadArchiveCommand,
   ThreadUnarchiveCommand,
@@ -1463,6 +1528,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
   ThreadCreateCommand,
+  ThreadBranchCreateCommand,
   ThreadDeleteCommand,
   ThreadArchiveCommand,
   ThreadUnarchiveCommand,
@@ -1515,6 +1581,9 @@ const ThreadMessageAssistantCompleteCommand = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
   turnId: Schema.optional(TurnId),
+  // How the reply ended. Omitted when the text was finalized by something other
+  // than a settled turn, which leaves the message unbranchable.
+  completion: Schema.optional(OrchestrationMessageCompletion),
   createdAt: IsoDateTime,
 });
 
@@ -1549,6 +1618,19 @@ const ThreadHistoryImportCommand = Schema.Struct({
       createdAt: IsoDateTime,
     }),
   ).check(Schema.isNonEmpty()),
+});
+
+/**
+ * Records that the provider accepted a branch's inherited text context. Issued
+ * once, after the first new prompt reaches the provider, so a restart or a
+ * retried first turn re-supplies the context instead of losing it, and later
+ * turns do not repeat it.
+ */
+const ThreadBranchInheritedContextAcceptedCommand = Schema.Struct({
+  type: Schema.Literal("thread.branch.inherited-context.accepted"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  createdAt: IsoDateTime,
 });
 
 /**
@@ -1667,6 +1749,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadMessageAssistantCompleteCommand,
   ThreadMessageReasoningDeltaCommand,
   ThreadMessageReasoningCompleteCommand,
+  ThreadBranchInheritedContextAcceptedCommand,
   ThreadHistoryImportCommand,
   ThreadMessageUserAppendCommand,
   ThreadProposedPlanUpsertCommand,
@@ -1692,6 +1775,7 @@ export const OrchestrationEventType = Schema.Literals([
   "project.meta-updated",
   "project.deleted",
   "thread.created",
+  "thread.branched",
   "thread.deleted",
   "thread.archived",
   "thread.unarchived",
@@ -1710,6 +1794,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
   "thread.message-sent",
+  "thread.branch-inherited-context-accepted",
   "thread.turn-start-requested",
   "thread.turn-interrupt-requested",
   "thread.approval-response-requested",
@@ -1780,6 +1865,26 @@ export const ThreadDeletedPayload = Schema.Struct({
   threadId: ThreadId,
   deletedAt: IsoDateTime,
 });
+
+/**
+ * Attaches the branch provenance to a freshly created branch thread. The copied
+ * messages arrive as their own `thread.message-sent` events in the same
+ * transaction, so the branch is either wholly visible or not at all.
+ */
+export const ThreadBranchedPayload = Schema.Struct({
+  threadId: ThreadId,
+  branchedFrom: ThreadBranchProvenance,
+  updatedAt: IsoDateTime,
+});
+export type ThreadBranchedPayload = typeof ThreadBranchedPayload.Type;
+
+export const ThreadBranchInheritedContextAcceptedPayload = Schema.Struct({
+  threadId: ThreadId,
+  inheritedContextState: ThreadBranchInheritedContextState,
+  updatedAt: IsoDateTime,
+});
+export type ThreadBranchInheritedContextAcceptedPayload =
+  typeof ThreadBranchInheritedContextAcceptedPayload.Type;
 
 export const ThreadArchivedPayload = Schema.Struct({
   threadId: ThreadId,
@@ -1919,6 +2024,9 @@ export const ThreadMessageSentPayload = Schema.Struct({
   // Events persisted before the field existed carry no key at all.
   turnId: Schema.NullOr(TurnId).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   streaming: Schema.Boolean,
+  // Absent for anything that never reached a settled turn outcome, including
+  // events persisted before the field existed.
+  completion: Schema.optional(OrchestrationMessageCompletion),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -2064,6 +2172,11 @@ export const OrchestrationEvent = Schema.Union([
   }),
   Schema.Struct({
     ...EventBaseFields,
+    type: Schema.Literal("thread.branched"),
+    payload: ThreadBranchedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
     type: Schema.Literal("thread.deleted"),
     payload: ThreadDeletedPayload,
   }),
@@ -2151,6 +2264,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.message-sent"),
     payload: ThreadMessageSentPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.branch-inherited-context-accepted"),
+    payload: ThreadBranchInheritedContextAcceptedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

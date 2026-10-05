@@ -165,6 +165,7 @@ import {
   timelineContentOverflowsViewport,
 } from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
+import { BranchConversationButton } from "./BranchConversationButton";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { inferEntryKindFromPath } from "../../pierre-icons";
 import { AssistantSelectionToolbar } from "./AssistantSelectionToolbar";
@@ -2473,6 +2474,13 @@ function AssistantMessageMeta({
         showCopyButton={showCopyButton}
         streaming={copyStreaming}
       />
+      {ctx.threadRef && (
+        <BranchConversationButton
+          message={message}
+          environmentId={ctx.activeThreadEnvironmentId}
+          sourceThreadId={ctx.threadRef.threadId}
+        />
+      )}
       {!message.streaming && (
         <Tooltip>
           <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>

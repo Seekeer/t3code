@@ -119,6 +119,7 @@ import {
   type MediaVideoPreviewSource,
 } from "../../lib/videoPreviewSource";
 import { CopyTextButton } from "../../components/CopyTextButton";
+import { BranchConversationButton } from "./BranchConversationButton";
 import { parseReviewCommentMessageSegments } from "../review/reviewCommentSelection";
 import type { ReviewDiffTheme } from "../review/shikiReviewHighlighter";
 import {
@@ -1355,6 +1356,7 @@ function renderFeedEntry(
   props: Pick<
     ThreadFeedProps,
     | "environmentId"
+    | "threadId"
     | "onUseArtifactTemplate"
     | "skills"
     | "dispatchingMessageId"
@@ -1738,6 +1740,12 @@ function renderFeedEntry(
               tintColor={iconSubtleColor}
               buttonSize={28}
               iconSize={13}
+            />
+            <BranchConversationButton
+              message={message}
+              environmentId={props.environmentId}
+              sourceThreadId={props.threadId}
+              tintColor={iconSubtleColor}
             />
             <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
               {timestampLabel}
@@ -2755,6 +2763,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         <ThreadMediaVisibility>
           {renderFeedEntry(info, {
             environmentId: props.environmentId,
+            threadId: props.threadId,
             dispatchingMessageId: props.dispatchingMessageId,
             onEditPendingMessage: props.onEditPendingMessage,
             copiedRowId,

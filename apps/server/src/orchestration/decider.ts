@@ -13,6 +13,7 @@ import {
   type ThreadPullRequestKey,
   type ThreadPullRequestLink,
   type OrchestrationThreadActivity,
+  type ThreadBranchProvenance,
 } from "@t3tools/contracts";
 import {
   legacyLinkedPullRequestOf,
@@ -44,6 +45,11 @@ import {
   requireThreadAbsent,
   requireThreadNotArchived,
 } from "./commandInvariants.ts";
+import {
+  BRANCH_INHERITED_CONTEXT_MAX_CHARS,
+  exceedsBranchInheritedContextBudget,
+  renderBranchInheritedContext,
+} from "./branchInheritedContext.ts";
 import { projectEvent } from "./projector.ts";
 import { threadHasQueuedTurnStart } from "./ThreadSettlementPolicy.ts";
 
@@ -408,6 +414,168 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: command.createdAt,
         },
       };
+    }
+
+    case "thread.branch.create": {
+      if (command.sourceThreadId === command.threadId) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "A conversation branch must be created in a new thread.",
+        });
+      }
+      const source = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.sourceThreadId,
+      });
+      yield* requireThreadAbsent({ readModel, command, threadId: command.threadId });
+      if (source.deletedAt !== null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Thread '${command.sourceThreadId}' no longer exists.`,
+        });
+      }
+      // The read model is the whole thread, not the page a client happens to
+      // hold, so the snapshot does not depend on what was loaded.
+      const selectedIndex = source.messages.findIndex(
+        (message) => message.id === command.sourceMessageId,
+      );
+      const selected = selectedIndex === -1 ? undefined : source.messages[selectedIndex];
+      if (
+        selected === undefined ||
+        selected.role !== "assistant" ||
+        selected.streaming ||
+        selected.completion !== "completed"
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Message '${command.sourceMessageId}' is not a completed agent reply in thread '${command.sourceThreadId}'.`,
+        });
+      }
+
+      // Reasoning traces, activities, turn diffs and checkpoints are not
+      // conversation, so only user and assistant text crosses over.
+      const inheritedMessages = source.messages
+        .slice(0, selectedIndex + 1)
+        .filter(
+          (message): message is typeof message & { role: "user" | "assistant" } =>
+            message.role === "user" || message.role === "assistant",
+        );
+      if (inheritedMessages.length === 0) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Thread '${command.sourceThreadId}' has no conversation to inherit.`,
+        });
+      }
+      const attachmentCount = inheritedMessages.reduce(
+        (total, message) => total + (message.attachments?.length ?? 0),
+        0,
+      );
+      if (attachmentCount > 0) {
+        // Copying attachment bytes into another thread is its own slice. Until
+        // it lands, say so instead of quietly dropping them.
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Branching is not supported for conversations with attachments (${attachmentCount} in the copied messages).`,
+        });
+      }
+      const inheritedContext = renderBranchInheritedContext(inheritedMessages);
+      if (exceedsBranchInheritedContextBudget(inheritedContext)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `The conversation before this reply is too long to inherit (${inheritedContext.length} of ${BRANCH_INHERITED_CONTEXT_MAX_CHARS} characters).`,
+        });
+      }
+
+      const branchedFrom: ThreadBranchProvenance = {
+        sourceThreadId: source.id,
+        sourceThreadTitle: source.title,
+        sourceMessageId: selected.id,
+        strategy: "text-context",
+        inheritedMessageCount: inheritedMessages.length,
+        inheritedContextState: "pending",
+        createdAt: command.createdAt,
+      };
+      const eventBase = {
+        aggregateKind: "thread" as const,
+        aggregateId: command.threadId,
+        commandId: command.commandId,
+      };
+      const events: Array<PlannedOrchestrationEvent> = [
+        {
+          ...(yield* withEventBase({
+            ...eventBase,
+            occurredAt: command.createdAt,
+            metadata: { historyImport: true },
+          })),
+          type: "thread.created",
+          payload: {
+            threadId: command.threadId,
+            projectId: source.projectId,
+            title: source.title,
+            modelSelection: source.modelSelection,
+            runtimeMode: source.runtimeMode,
+            interactionMode: source.interactionMode,
+            // The branch continues against the source's current workspace. No
+            // Git branch is created and no files are restored.
+            branch: source.branch,
+            worktreePath: source.worktreePath,
+            createdAt: command.createdAt,
+            updatedAt: command.createdAt,
+          },
+        },
+      ];
+      // Copied messages take ids in the reserved imported-session namespace for
+      // the same reason agent-session imports do: they are history, not queued
+      // work, so they must not read as a pending turn or seed a checkpoint.
+      for (const [index, message] of inheritedMessages.entries()) {
+        events.push({
+          ...(yield* withEventBase({
+            ...eventBase,
+            occurredAt: message.createdAt,
+            metadata: { historyImport: true },
+          })),
+          type: "thread.message-sent",
+          payload: {
+            threadId: command.threadId,
+            messageId: MessageId.make(
+              `import:${command.threadId}:${String(index).padStart(6, "0")}`,
+            ),
+            role: message.role,
+            text: message.text,
+            turnId: null,
+            streaming: false,
+            // Preserved so a branch can itself be branched from.
+            ...(message.role === "assistant" && message.completion !== undefined
+              ? { completion: message.completion }
+              : {}),
+            createdAt: message.createdAt,
+            updatedAt: message.createdAt,
+          },
+        });
+      }
+      events.push(
+        {
+          ...(yield* withEventBase({ ...eventBase, occurredAt: command.createdAt })),
+          type: "thread.branched",
+          payload: {
+            threadId: command.threadId,
+            branchedFrom,
+            updatedAt: command.createdAt,
+          },
+        },
+        // A branch opens idle: no session, no turn, nothing in flight.
+        {
+          ...(yield* withEventBase({ ...eventBase, occurredAt: command.createdAt })),
+          type: "thread.settled",
+          payload: {
+            threadId: command.threadId,
+            settledAt: command.createdAt,
+            updatedAt: command.createdAt,
+          },
+        },
+      );
+      return events;
     }
 
     case "thread.delete": {
@@ -1994,7 +2162,33 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           text: "",
           turnId: command.turnId ?? null,
           streaming: false,
+          ...(command.type === "thread.message.assistant.complete" &&
+          command.completion !== undefined
+            ? { completion: command.completion }
+            : {}),
           createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "thread.branch.inherited-context.accepted": {
+      yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.branch-inherited-context-accepted",
+        payload: {
+          threadId: command.threadId,
+          inheritedContextState: "accepted",
           updatedAt: command.createdAt,
         },
       };

@@ -12,7 +12,12 @@ import {
   ProjectionThreadRepository,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-import { ModelSelection, ThreadLinkedPullRequest, ThreadTitleState } from "@t3tools/contracts";
+import {
+  ModelSelection,
+  ThreadBranchProvenance,
+  ThreadLinkedPullRequest,
+  ThreadTitleState,
+} from "@t3tools/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
@@ -20,6 +25,7 @@ const ProjectionThreadDbRow = ProjectionThread.mapFields(
     titleState: Schema.NullOr(Schema.fromJsonString(ThreadTitleState)),
     linkedPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
     branchPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
+    branchedFrom: Schema.NullOr(Schema.fromJsonString(ThreadBranchProvenance)),
   }),
 );
 
@@ -42,6 +48,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           worktree_path,
           linked_pull_request_json,
           branch_pull_request_json,
+          branched_from_json,
           latest_turn_id,
           created_at,
           updated_at,
@@ -75,6 +82,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.worktreePath},
           ${row.linkedPullRequest === undefined || row.linkedPullRequest === null ? null : JSON.stringify(row.linkedPullRequest)},
           ${row.branchPullRequest === undefined || row.branchPullRequest === null ? null : JSON.stringify(row.branchPullRequest)},
+          ${row.branchedFrom === undefined || row.branchedFrom === null ? null : JSON.stringify(row.branchedFrom)},
           ${row.latestTurnId},
           ${row.createdAt},
           ${row.updatedAt},
@@ -108,6 +116,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           worktree_path = excluded.worktree_path,
           linked_pull_request_json = excluded.linked_pull_request_json,
           branch_pull_request_json = excluded.branch_pull_request_json,
+          branched_from_json = excluded.branched_from_json,
           latest_turn_id = excluded.latest_turn_id,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at,
@@ -148,6 +157,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           worktree_path AS "worktreePath",
           linked_pull_request_json AS "linkedPullRequest",
           branch_pull_request_json AS "branchPullRequest",
+          branched_from_json AS "branchedFrom",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",

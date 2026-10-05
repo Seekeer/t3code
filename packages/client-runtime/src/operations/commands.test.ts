@@ -1,6 +1,7 @@
 import {
   CommandId,
   EnvironmentId,
+  MessageId,
   ORCHESTRATION_WS_METHODS,
   ProjectId,
   ThreadId,
@@ -23,6 +24,7 @@ import * as RpcSession from "../rpc/session.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import {
   archiveThread,
+  createConversationBranch,
   createProject,
   revertThreadCheckpoint,
   reorderActiveThread,
@@ -140,6 +142,34 @@ describe("environment commands", () => {
           commandId: "queued-command",
           threadId: "thread-1",
           createdAt: "2026-06-06T00:01:00.000Z",
+        },
+      ]);
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("sends branch creation to the environment that owns the source", () =>
+    Effect.gen(function* () {
+      const dispatched: ClientOrchestrationCommand[] = [];
+      const supervisor = yield* makeSupervisor(dispatched);
+
+      yield* createConversationBranch({
+        threadId: ThreadId.make("branch-1"),
+        commandId: CommandId.make("branch-command"),
+        sourceThreadId: ThreadId.make("source-thread"),
+        sourceMessageId: MessageId.make("assistant-reply"),
+        createdAt: "2026-06-06T00:02:00.000Z",
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(dispatched).toEqual([
+        {
+          type: "thread.branch.create",
+          // The caller owns the destination and command ids, so a retry after a
+          // dropped connection lands on the same branch.
+          commandId: "branch-command",
+          threadId: "branch-1",
+          sourceThreadId: "source-thread",
+          sourceMessageId: "assistant-reply",
+          createdAt: "2026-06-06T00:02:00.000Z",
         },
       ]);
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),

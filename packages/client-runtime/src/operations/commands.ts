@@ -32,6 +32,7 @@ export type CreateProjectInput = CommandInput<"project.create">;
 export type UpdateProjectInput = CommandInput<"project.meta.update">;
 export type DeleteProjectInput = CommandInput<"project.delete">;
 export type CreateThreadInput = CommandInput<"thread.create">;
+export type CreateConversationBranchInput = CommandInput<"thread.branch.create">;
 export type DeleteThreadInput = CommandInput<"thread.delete">;
 export type ArchiveThreadInput = CommandInput<"thread.archive">;
 export type UnarchiveThreadInput = CommandInput<"thread.unarchive">;
@@ -136,6 +137,23 @@ export const createThread: (input: CreateThreadInput) => CommandEffect = Effect.
     createdAt: metadata.createdAt,
   });
 });
+
+/**
+ * Creates a conversation branch on the environment that owns the source thread.
+ * The caller mints `threadId` so a retry after a dropped connection resolves to
+ * the same command receipt - and therefore the same branch - instead of a
+ * second one.
+ */
+export const createConversationBranch: (input: CreateConversationBranchInput) => CommandEffect =
+  Effect.fn("EnvironmentCommands.createConversationBranch")(function* (input) {
+    const metadata = yield* timestampedCommandMetadata(input);
+    return yield* dispatch({
+      ...input,
+      type: "thread.branch.create",
+      commandId: metadata.commandId,
+      createdAt: metadata.createdAt,
+    });
+  });
 
 export const deleteThread: (input: DeleteThreadInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.deleteThread",

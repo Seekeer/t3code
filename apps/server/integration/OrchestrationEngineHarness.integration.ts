@@ -232,6 +232,13 @@ export interface OrchestrationIntegrationHarness {
 interface MakeOrchestrationIntegrationHarnessOptions {
   readonly provider?: ProviderDriverKind;
   readonly realCodex?: boolean;
+  /**
+   * Reuse an earlier harness root instead of a fresh temp directory, so a second
+   * harness can restart against the same database and attachment storage.
+   */
+  readonly rootDir?: string;
+  /** Skip the `git init` + initial commit when the workspace already exists. */
+  readonly initializeWorkspace?: boolean;
   /** Tracer for every fiber the harness runtime runs, including reactors. */
   readonly tracer?: Tracer.Tracer;
 }
@@ -256,16 +263,18 @@ export const makeOrchestrationIntegrationHarness = (
           makeAdapterRegistryMock({ [adapterHarness.provider]: adapterHarness.adapter }),
         )
       : null;
-    const rootDir = yield* fileSystem.makeTempDirectoryScoped({
-      prefix: "t3-orchestration-integration-",
-    });
+    const rootDir =
+      options?.rootDir ??
+      (yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-orchestration-integration-" }));
     const workspaceDir = path.join(rootDir, "workspace");
     const { stateDir, dbPath } = yield* deriveServerPaths(rootDir, undefined).pipe(
       Effect.provideService(Path.Path, path),
     );
-    yield* fileSystem.makeDirectory(workspaceDir, { recursive: true });
-    yield* fileSystem.makeDirectory(stateDir, { recursive: true });
-    yield* initializeGitWorkspace(workspaceDir);
+    if (options?.initializeWorkspace !== false) {
+      yield* fileSystem.makeDirectory(workspaceDir, { recursive: true });
+      yield* fileSystem.makeDirectory(stateDir, { recursive: true });
+      yield* initializeGitWorkspace(workspaceDir);
+    }
 
     const persistenceLayer = makeSqlitePersistenceLive(dbPath);
     const orchestrationLayer = OrchestrationEngineLive.pipe(

@@ -3,6 +3,7 @@ import {
   CommandId,
   MessageId,
   type OrchestrationEvent,
+  OrchestrationMessageCompletion,
   OrchestrationProposedPlanId,
   CheckpointRef,
   classifyTaskAgentKind,
@@ -394,6 +395,26 @@ function normalizeRuntimeTurnState(
     default:
       return "completed";
   }
+}
+
+/**
+ * How a reply finalized by a terminal turn actually ended. Streaming stopping
+ * is not an outcome: an interrupted or failed turn also leaves a partial reply
+ * that must not read as branchable.
+ */
+function terminalTurnMessageCompletion(
+  event: ProviderRuntimeEvent,
+): OrchestrationMessageCompletion {
+  if (event.type === "turn.aborted") {
+    return "interrupted";
+  }
+  const state = normalizeRuntimeTurnState(
+    event.type === "turn.completed" ? event.payload.state : undefined,
+  );
+  if (state === "completed") {
+    return "completed";
+  }
+  return state === "failed" ? "failed" : "interrupted";
 }
 
 function orchestrationSessionStatusFromRuntimeState(
@@ -1504,6 +1525,12 @@ const make = Effect.gen(function* () {
     finalDeltaCommandTag: string;
     fallbackText?: string;
     hasProjectedMessage?: boolean;
+    /**
+     * How the reply ended. Omitted when the text was closed by something other
+     * than a settled turn - a pause for approval, for instance - which leaves
+     * the message unbranchable.
+     */
+    completion?: OrchestrationMessageCompletion;
   }) =>
     Effect.gen(function* () {
       const bufferedText = yield* takeBufferedAssistantText(input.messageId);
@@ -1540,6 +1567,7 @@ const make = Effect.gen(function* () {
           threadId: input.threadId,
           messageId: input.messageId,
           ...(input.turnId ? { turnId: input.turnId } : {}),
+          ...(input.completion !== undefined ? { completion: input.completion } : {}),
           createdAt: input.createdAt,
         });
       }
@@ -2321,6 +2349,9 @@ const make = Effect.gen(function* () {
             commandTag: "assistant-complete",
             finalDeltaCommandTag: "assistant-delta-finalize",
             hasProjectedMessage: existingAssistantMessage !== undefined,
+            // The provider closed this reply itself, so the turn reached a
+            // normal end regardless of what comes after it.
+            completion: "completed",
             ...(assistantCompletion.fallbackText !== undefined && shouldApplyFallbackCompletionText
               ? { fallbackText: assistantCompletion.fallbackText }
               : {}),
@@ -2406,6 +2437,7 @@ const make = Effect.gen(function* () {
                     commandTag: "assistant-complete-finalize",
                     finalDeltaCommandTag: "assistant-delta-finalize-fallback",
                     hasProjectedMessage: existingMessage !== undefined,
+                    completion: terminalTurnMessageCompletion(event),
                   }),
                 ),
               ),

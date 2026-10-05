@@ -55,6 +55,7 @@ import { readPastedComposerContext } from "./composerInlineTokenPaste";
 import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
 import { type CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
 import { effectiveSnoozed, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
+import { conversationBranchNotice } from "@t3tools/client-runtime/state/thread-branches";
 import {
   parseCodexFeedbackCommand,
   submitCodexFeedback,
@@ -6275,6 +6276,60 @@ export default function ChatView(props: ChatViewProps) {
       }
     }
   }, [activeThread, environmentId, interruptThreadTurn, setThreadError]);
+  // A branch carries its conversation as text only, so it says so for as long
+  // as it exists. Not dismissible: the limit is a property of the branch, not a
+  // piece of news.
+  const conversationBranchSourceRef = useMemo(
+    () =>
+      activeThread?.branchedFrom && activeThreadEnvironmentId
+        ? scopeThreadRef(activeThreadEnvironmentId, activeThread.branchedFrom.sourceThreadId)
+        : null,
+    [activeThread, activeThreadEnvironmentId],
+  );
+  const conversationBranchSourceShell = useThreadShell(conversationBranchSourceRef);
+  const conversationBranchBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
+    const notice = conversationBranchNotice(
+      activeThread?.branchedFrom,
+      conversationBranchSourceShell !== null,
+    );
+    if (notice === null || activeThreadEnvironmentId === null) {
+      return null;
+    }
+    return {
+      id: `conversation-branch:${notice.sourceThreadId}`,
+      variant: "info",
+      priority: "notice",
+      icon: <GitBranchIcon />,
+      title: (
+        <span className="min-w-0 truncate">
+          Branched from {notice.sourceThreadTitle}. The agent received{" "}
+          {notice.inheritedMessageCount === 1 ? "this message" : "these messages"} as text —
+          attachments and tool activity were not carried over.
+        </span>
+      ),
+      ...(notice.sourceAvailable
+        ? {
+            actions: (
+              <Button
+                size="xs"
+                variant="ghost"
+                aria-label="View source conversation"
+                onClick={() => {
+                  void navigate({
+                    to: "/$environmentId/$threadId",
+                    params: buildThreadRouteParams(
+                      scopeThreadRef(activeThreadEnvironmentId, notice.sourceThreadId),
+                    ),
+                  });
+                }}
+              >
+                View source
+              </Button>
+            ),
+          }
+        : {}),
+    };
+  }, [activeThreadEnvironmentId, activeThread, conversationBranchSourceShell, navigate]);
   const backgroundLivenessBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
     if (activeBackgroundLiveness === null || !activeThread) {
       return null;
@@ -6511,6 +6566,8 @@ export default function ChatView(props: ChatViewProps) {
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const backgroundLivenessItems =
       backgroundLivenessBannerItem === null ? [] : [backgroundLivenessBannerItem];
+    const conversationBranchItems =
+      conversationBranchBannerItem === null ? [] : [conversationBranchBannerItem];
     const resumeCompactionItems =
       resumeCompactionBannerItem === null ? [] : [resumeCompactionBannerItem];
     const wokeThreadItems = wokeThreadBannerItem === null ? [] : [wokeThreadBannerItem];
@@ -6524,6 +6581,7 @@ export default function ChatView(props: ChatViewProps) {
         ...usageLimitsItems,
         ...projectCloneItems,
         ...systemComposerBannerItems,
+        ...conversationBranchItems,
         ...backgroundLivenessItems,
         ...resumeCompactionItems,
         ...wokeThreadItems,
@@ -6535,6 +6593,7 @@ export default function ChatView(props: ChatViewProps) {
       ...usageLimitsItems,
       ...projectCloneItems,
       ...systemComposerBannerItems,
+      ...conversationBranchItems,
       ...backgroundLivenessItems,
       ...resumeCompactionItems,
       ...wokeThreadItems,
@@ -6581,6 +6640,7 @@ export default function ChatView(props: ChatViewProps) {
   }, [
     activeBranchMismatchKey,
     backgroundLivenessBannerItem,
+    conversationBranchBannerItem,
     feedbackBannerItems,
     handleRestoreThreadBranch,
     isRestoringThreadBranch,

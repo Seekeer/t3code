@@ -109,6 +109,7 @@ import {
   ThreadComposer,
 } from "./ThreadComposer";
 import { ThreadFeed } from "./ThreadFeed";
+import { ConversationBranchNotice } from "./ConversationBranchNotice";
 import type { ThreadContentPresentation } from "./threadContentPresentation";
 import { resolveThreadFeedSubmissionAnchor } from "./thread-feed-live-follow";
 
@@ -898,6 +899,10 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                 ? "absolute inset-0 bg-thread-canvas"
                 : "absolute inset-0 bg-screen"
             }
+          />
+          <ConversationBranchNotice
+            environmentId={props.environmentId}
+            branchedFrom={props.selectedThread.branchedFrom}
           />
           <RenderErrorBoundary
             key={selectedThreadKey}

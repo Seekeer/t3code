@@ -3,6 +3,8 @@ import {
   ProjectMetaUpdatedPayload as ContractsProjectMetaUpdatedPayloadSchema,
   ProjectDeletedPayload as ContractsProjectDeletedPayloadSchema,
   ThreadCreatedPayload as ContractsThreadCreatedPayloadSchema,
+  ThreadBranchedPayload as ContractsThreadBranchedPayloadSchema,
+  ThreadBranchInheritedContextAcceptedPayload as ContractsThreadBranchInheritedContextAcceptedPayloadSchema,
   ThreadArchivedPayload as ContractsThreadArchivedPayloadSchema,
   ThreadSettledPayload as ContractsThreadSettledPayloadSchema,
   ThreadMetaUpdatedPayload as ContractsThreadMetaUpdatedPayloadSchema,
@@ -39,6 +41,9 @@ export const ProjectMetaUpdatedPayload = ContractsProjectMetaUpdatedPayloadSchem
 export const ProjectDeletedPayload = ContractsProjectDeletedPayloadSchema;
 
 export const ThreadCreatedPayload = ContractsThreadCreatedPayloadSchema;
+export const ThreadBranchedPayload = ContractsThreadBranchedPayloadSchema;
+export const ThreadBranchInheritedContextAcceptedPayload =
+  ContractsThreadBranchInheritedContextAcceptedPayloadSchema;
 export const ThreadArchivedPayload = ContractsThreadArchivedPayloadSchema;
 export const ThreadSettledPayload = ContractsThreadSettledPayloadSchema;
 export const ThreadMetaUpdatedPayload = ContractsThreadMetaUpdatedPayloadSchema;

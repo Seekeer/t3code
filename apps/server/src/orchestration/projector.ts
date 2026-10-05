@@ -33,6 +33,8 @@ import {
   ProjectMetaUpdatedPayload,
   ThreadActivityAppendedPayload,
   ThreadArchivedPayload,
+  ThreadBranchedPayload,
+  ThreadBranchInheritedContextAcceptedPayload,
   ThreadCreatedPayload,
   ThreadDeletedPayload,
   ThreadInteractionModeSetPayload,
@@ -476,6 +478,42 @@ export function projectEvent(
         };
       });
 
+    case "thread.branched":
+      return decodeForEvent(ThreadBranchedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            branchedFrom: payload.branchedFrom,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "thread.branch-inherited-context-accepted":
+      return decodeForEvent(
+        ThreadBranchInheritedContextAcceptedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => {
+          const existing = nextBase.threads.find((thread) => thread.id === payload.threadId);
+          if (existing?.branchedFrom == null) {
+            return nextBase;
+          }
+          return {
+            ...nextBase,
+            threads: updateThread(nextBase.threads, payload.threadId, {
+              branchedFrom: {
+                ...existing.branchedFrom,
+                inheritedContextState: payload.inheritedContextState,
+              },
+              updatedAt: payload.updatedAt,
+            }),
+          };
+        }),
+      );
+
     case "thread.deleted":
       return decodeForEvent(ThreadDeletedPayload, event.payload, event.type, "payload").pipe(
         Effect.map((payload) => ({
@@ -797,6 +835,7 @@ export function projectEvent(
             ...(payload.context !== undefined ? { context: payload.context } : {}),
             turnId: payload.turnId,
             streaming: payload.streaming,
+            ...(payload.completion !== undefined ? { completion: payload.completion } : {}),
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
           },
@@ -816,6 +855,7 @@ export function projectEvent(
                         ? message.text
                         : entry.text,
                     streaming: message.streaming,
+                    ...(message.completion !== undefined ? { completion: message.completion } : {}),
                     updatedAt: message.updatedAt,
                     turnId: message.turnId,
                     ...(message.attachments !== undefined

@@ -187,6 +187,8 @@ export interface TestProviderAdapterHarness {
     response: TestTurnResponse,
   ) => Effect.Effect<void, never>;
   readonly getStartCount: () => number;
+  /** Prompts this adapter was actually asked to send, in order. */
+  readonly getSentTurns: (threadId: ThreadId) => ReadonlyArray<string>;
   readonly getRollbackCalls: (threadId: ThreadId) => ReadonlyArray<number>;
   readonly getInterruptCalls: (threadId: ThreadId) => ReadonlyArray<TurnId | undefined>;
   readonly listActiveSessionIds: () => ReadonlyArray<ThreadId>;
@@ -231,6 +233,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
     const sessions = new Map<ThreadId, SessionState>();
     const queuedResponsesForNextSession: TestTurnResponse[] = [];
     const interruptCallsBySession = new Map<ThreadId, Array<TurnId | undefined>>();
+    const sentTurnsBySession = new Map<ThreadId, string[]>();
     const approvalResponsesBySession = new Map<
       ThreadId,
       Array<{
@@ -298,6 +301,9 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
         state.turnCount += 1;
         const turnCount = state.turnCount;
         const turnId = TurnId.make(`turn-${turnCount}`);
+        const existingSentTurns = sentTurnsBySession.get(input.threadId) ?? [];
+        existingSentTurns.push(input.input ?? "");
+        sentTurnsBySession.set(input.threadId, existingSentTurns);
 
         const response = state.queuedResponses.shift();
         if (!response) {
@@ -529,6 +535,10 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
 
     const getStartCount = (): number => sessionCount;
 
+    const getSentTurns = (threadId: ThreadId): ReadonlyArray<string> => [
+      ...(sentTurnsBySession.get(threadId) ?? []),
+    ];
+
     const getInterruptCalls = (threadId: ThreadId): ReadonlyArray<TurnId | undefined> => {
       const calls = interruptCallsBySession.get(threadId);
       if (!calls) {
@@ -560,6 +570,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       queueTurnResponse,
       queueTurnResponseForNextSession,
       getStartCount,
+      getSentTurns,
       getRollbackCalls,
       getInterruptCalls,
       listActiveSessionIds,

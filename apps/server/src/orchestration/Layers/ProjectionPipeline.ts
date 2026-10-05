@@ -621,6 +621,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             worktreePath: event.payload.worktreePath,
             linkedPullRequest: null,
             branchPullRequest: null,
+            branchedFrom: null,
             latestTurnId: null,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
@@ -643,6 +644,39 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             deletedAt: null,
           });
           return;
+
+        case "thread.branched": {
+          const existingRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionThreadRepository.upsert({
+            ...existingRow.value,
+            branchedFrom: event.payload.branchedFrom,
+            updatedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        case "thread.branch-inherited-context-accepted": {
+          const existingRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isNone(existingRow) || existingRow.value.branchedFrom == null) {
+            return;
+          }
+          yield* projectionThreadRepository.upsert({
+            ...existingRow.value,
+            branchedFrom: {
+              ...existingRow.value.branchedFrom,
+              inheritedContextState: event.payload.inheritedContextState,
+            },
+            updatedAt: event.payload.updatedAt,
+          });
+          return;
+        }
 
         case "thread.archived": {
           const existingRow = yield* projectionThreadRepository.getById({
@@ -1190,6 +1224,11 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...((event.payload.context ?? previousMessage?.context) !== undefined
               ? { context: event.payload.context ?? previousMessage?.context }
               : {}),
+            ...(event.payload.completion !== undefined
+              ? { completion: event.payload.completion }
+              : previousMessage?.completion !== undefined
+                ? { completion: previousMessage.completion }
+                : {}),
             isStreaming: false,
             createdAt: previousMessage?.createdAt ?? event.payload.createdAt,
             updatedAt: event.payload.updatedAt,

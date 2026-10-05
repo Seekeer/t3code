@@ -231,6 +231,10 @@
       "types": "./src/state/threadSort.ts",
       "default": "./src/state/threadSort.ts"
     },
+    "./state/thread-branches": {
+      "types": "./src/state/threadBranches.ts",
+      "default": "./src/state/threadBranches.ts"
+    },
     "./state/thread-settled": {
       "types": "./src/state/threadSettled.ts",
       "default": "./src/state/threadSettled.ts"

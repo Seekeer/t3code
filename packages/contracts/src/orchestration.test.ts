@@ -1688,3 +1688,95 @@ it.effect("encodes compatible icons inside snapshots and client commands", () =>
     assert.deepEqual(yield* decodeNightlyIcon(command.projectIcon), fallback);
   }),
 );
+
+it.effect("decodes a conversation branch command and its events", () =>
+  Effect.gen(function* () {
+    const command = yield* decodeClientOrchestrationCommand({
+      type: "thread.branch.create",
+      commandId: "branch-command",
+      threadId: "branch-1",
+      sourceThreadId: "source-thread",
+      sourceMessageId: "assistant-reply",
+      createdAt: "2026-06-06T00:02:00.000Z",
+    });
+    if (command.type !== "thread.branch.create") throw new Error("Unexpected command");
+    assert.strictEqual(command.sourceThreadId, "source-thread");
+
+    const branched = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "event-branched",
+      aggregateKind: "thread",
+      aggregateId: "branch-1",
+      type: "thread.branched",
+      occurredAt: "2026-06-06T00:02:00.000Z",
+      commandId: "branch-command",
+      causationEventId: null,
+      correlationId: "branch-command",
+      metadata: {},
+      payload: {
+        threadId: "branch-1",
+        branchedFrom: {
+          sourceThreadId: "source-thread",
+          sourceThreadTitle: "Source thread",
+          sourceMessageId: "assistant-reply",
+          strategy: "text-context",
+          inheritedMessageCount: 2,
+          inheritedContextState: "pending",
+          createdAt: "2026-06-06T00:02:00.000Z",
+        },
+        updatedAt: "2026-06-06T00:02:00.000Z",
+      },
+    });
+    if (branched.type !== "thread.branched") throw new Error("Unexpected event");
+    assert.strictEqual(branched.payload.branchedFrom.inheritedMessageCount, 2);
+
+    const accepted = yield* decodeOrchestrationEvent({
+      sequence: 2,
+      eventId: "event-branch-accepted",
+      aggregateKind: "thread",
+      aggregateId: "branch-1",
+      type: "thread.branch-inherited-context-accepted",
+      occurredAt: "2026-06-06T00:03:00.000Z",
+      commandId: "branch-accept",
+      causationEventId: null,
+      correlationId: "branch-accept",
+      metadata: {},
+      payload: {
+        threadId: "branch-1",
+        inheritedContextState: "accepted",
+        updatedAt: "2026-06-06T00:03:00.000Z",
+      },
+    });
+    if (accepted.type !== "thread.branch-inherited-context-accepted") {
+      throw new Error("Unexpected event");
+    }
+    assert.strictEqual(accepted.payload.inheritedContextState, "accepted");
+  }),
+);
+
+it.effect("reads message payloads persisted before reply outcomes existed", () =>
+  Effect.gen(function* () {
+    const message = yield* decodeOrchestrationMessage({
+      id: "assistant-reply",
+      role: "assistant",
+      text: "Answered",
+      turnId: null,
+      streaming: false,
+      createdAt: "2026-06-06T00:00:00.000Z",
+      updatedAt: "2026-06-06T00:00:00.000Z",
+    });
+    assert.strictEqual(message.completion, undefined);
+
+    const payload = yield* decodeThreadMessageSentPayload({
+      threadId: "thread-1",
+      messageId: "assistant-reply",
+      role: "assistant",
+      text: "Answered",
+      turnId: null,
+      streaming: false,
+      createdAt: "2026-06-06T00:00:00.000Z",
+      updatedAt: "2026-06-06T00:00:00.000Z",
+    });
+    assert.strictEqual(payload.completion, undefined);
+  }),
+);

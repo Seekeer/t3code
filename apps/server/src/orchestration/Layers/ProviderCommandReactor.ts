@@ -9,6 +9,7 @@ import {
   type ProjectId,
   type OrchestrationSession,
   ThreadId,
+  type ThreadBranchProvenance,
   type ProviderSession,
   type RuntimeMode,
   type TurnId,
@@ -58,6 +59,10 @@ import {
   type ThreadTitleMessage,
 } from "../../textGeneration/ThreadTitleContext.ts";
 import { canReplaceThreadTitle, DEFAULT_THREAD_TITLE } from "../threadTitles.ts";
+import {
+  renderBranchInheritedContext,
+  withBranchInheritedContext,
+} from "../branchInheritedContext.ts";
 import {
   resolveSourceControlWriterModelSelection,
   ServerSettingsService,
@@ -535,6 +540,65 @@ const make = Effect.gen(function* () {
     return yield* projectionSnapshotQuery
       .getThreadDetailById(threadId, { activityKinds: [] })
       .pipe(Effect.map(Option.getOrUndefined));
+  });
+
+  /**
+   * The text a conversation branch still owes its provider. A branch starts a
+   * fresh provider session, so the copied prefix is supplied with the first new
+   * prompt and then forgotten. Until the provider takes it, it stays owed -
+   * across a restart and across a failed first turn - which is why this reads
+   * the branch's own copied messages instead of a separately stored copy.
+   *
+   * Only a branch that still owes its context gets here, so an ordinary turn
+   * never loads old message bodies.
+   */
+  const resolvePendingBranchInheritedContext = Effect.fnUntraced(function* (input: {
+    readonly threadId: ThreadId;
+    readonly branchedFrom: ThreadBranchProvenance;
+  }) {
+    if (input.branchedFrom.inheritedContextState === "accepted") {
+      return undefined;
+    }
+    const thread = yield* resolveThreadDetail(input.threadId);
+    if (thread === undefined) {
+      return undefined;
+    }
+    const inherited = thread.messages
+      .slice(0, input.branchedFrom.inheritedMessageCount)
+      .filter(
+        (message): message is typeof message & { role: "user" | "assistant" } =>
+          message.role === "user" || message.role === "assistant",
+      );
+    if (inherited.length === 0) {
+      return undefined;
+    }
+    return renderBranchInheritedContext(
+      inherited.map((message) => ({ role: message.role, text: message.text })),
+    );
+  });
+
+  const acceptBranchInheritedContext = Effect.fnUntraced(function* (
+    threadId: ThreadId,
+    createdAt: string,
+  ) {
+    // Best-effort: the prompt already reached the provider, so a failed receipt
+    // must not be reported as a failed turn. The worst case is the context
+    // being supplied once more on the next turn.
+    yield* orchestrationEngine
+      .dispatch({
+        type: "thread.branch.inherited-context.accepted",
+        commandId: yield* serverCommandId("branch-inherited-context-accepted"),
+        threadId,
+        createdAt,
+      })
+      .pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("failed to record branch inherited context acceptance", {
+            threadId,
+            cause: Cause.pretty(cause),
+          }),
+        ),
+      );
   });
 
   const rejectStartedThreadModelChangeIfRequired = Effect.fnUntraced(function* (input: {
@@ -1490,12 +1554,23 @@ const make = Effect.gen(function* () {
       turnsAfterCompaction.set(event.payload.threadId, queued);
       return;
     }
+    const inheritedContext =
+      thread.branchedFrom == null
+        ? undefined
+        : yield* resolvePendingBranchInheritedContext({
+            threadId: event.payload.threadId,
+            branchedFrom: thread.branchedFrom,
+          });
+    const promptText = projectComposerContextForProvider({
+      text: message.text,
+      records: message.context?.records ?? [],
+    });
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
-      messageText: projectComposerContextForProvider({
-        text: message.text,
-        records: message.context?.records ?? [],
-      }),
+      messageText:
+        inheritedContext === undefined
+          ? promptText
+          : withBranchInheritedContext(inheritedContext, promptText),
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined
         ? { modelSelection: event.payload.modelSelection }
@@ -1516,12 +1591,21 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const send = providerService
-      .sendTurn(sendTurnRequest.value)
-      .pipe(Effect.asVoid, Effect.catchCause(recoverTurnStartFailure));
+    const sendTurn = providerService.sendTurn(sendTurnRequest.value);
+    const send =
+      // Recorded only once the provider has taken the prompt: a failed first
+      // turn must be able to re-supply the inherited context, and later turns
+      // must not repeat it.
+      inheritedContext === undefined
+        ? sendTurn
+        : Effect.tap(sendTurn, () =>
+            acceptBranchInheritedContext(event.payload.threadId, event.payload.createdAt),
+          );
     // The forked send settles `sent` from here on, so drop the entry the post-processing hook uses.
     if (resumed && event.commandId !== null) resumedTurnStarts.delete(event.commandId);
     yield* send.pipe(
+      Effect.asVoid,
+      Effect.catchCause(recoverTurnStartFailure),
       Effect.ensuring(resumed ? Deferred.succeed(resumed.sent, undefined) : Effect.void),
       Effect.forkScoped,
     );
