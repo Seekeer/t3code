@@ -301,9 +301,6 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
         state.turnCount += 1;
         const turnCount = state.turnCount;
         const turnId = TurnId.make(`turn-${turnCount}`);
-        const existingSentTurns = sentTurnsBySession.get(input.threadId) ?? [];
-        existingSentTurns.push(input.input ?? "");
-        sentTurnsBySession.set(input.threadId, existingSentTurns);
 
         const response = state.queuedResponses.shift();
         if (!response) {
@@ -313,6 +310,9 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
             issue: `No queued turn response for thread ${input.threadId}.`,
           });
         }
+        const existingSentTurns = sentTurnsBySession.get(input.threadId) ?? [];
+        existingSentTurns.push(input.input ?? "");
+        sentTurnsBySession.set(input.threadId, existingSentTurns);
 
         const assistantDeltas: string[] = [];
         const deferredTurnCompletedEvents: ProviderRuntimeEvent[] = [];

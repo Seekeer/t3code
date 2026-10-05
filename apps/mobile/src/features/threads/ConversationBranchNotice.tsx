@@ -1,4 +1,7 @@
-import { conversationBranchNotice } from "@t3tools/client-runtime/state/thread-branches";
+import {
+  conversationBranchNotice,
+  conversationBranchNoticeText,
+} from "@t3tools/client-runtime/state/thread-branches";
 import type { ThreadBranchProvenance } from "@t3tools/contracts";
 import { CommonActions, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -37,9 +40,7 @@ export const ConversationBranchNotice = memo(function ConversationBranchNotice(p
       <SymbolView name="arrow.triangle.branch" size={14} className="mt-0.5" type="monochrome" />
       <View className="min-w-0 flex-1">
         <Text className="text-xs leading-relaxed text-foreground-secondary">
-          Branched from {notice.sourceThreadTitle}. The agent received{" "}
-          {notice.inheritedMessageCount === 1 ? "this message" : "these messages"} as text —
-          attachments and tool activity were not carried over.
+          {conversationBranchNoticeText(notice)}
         </Text>
         {notice.sourceAvailable ? (
           <Pressable

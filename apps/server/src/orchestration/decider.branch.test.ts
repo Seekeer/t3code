@@ -218,7 +218,6 @@ it.layer(NodeServices.layer)("thread.branch.create", (it) => {
           sourceThreadId: SOURCE_THREAD_ID,
           sourceThreadTitle: "Source thread",
           sourceMessageId: "message-assistant-1",
-          strategy: "text-context",
           inheritedMessageCount: 2,
           inheritedContextState: "pending",
         },
@@ -464,7 +463,6 @@ it.layer(NodeServices.layer)("thread.branch.create", (it) => {
       });
       expect(accepted).toMatchObject({
         type: "thread.branch-inherited-context-accepted",
-        payload: { inheritedContextState: "accepted" },
       });
       const projected = yield* projectAll(created, [accepted as OrchestrationEvent]);
       expect(

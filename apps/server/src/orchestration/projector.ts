@@ -506,7 +506,7 @@ export function projectEvent(
             threads: updateThread(nextBase.threads, payload.threadId, {
               branchedFrom: {
                 ...existing.branchedFrom,
-                inheritedContextState: payload.inheritedContextState,
+                inheritedContextState: "accepted",
               },
               updatedAt: payload.updatedAt,
             }),

@@ -802,27 +802,21 @@ export const ThreadPullRequestLink = Schema.Struct({
 });
 export type ThreadPullRequestLink = typeof ThreadPullRequestLink.Type;
 
-/** How a branch hands its inherited prefix to the provider. `text-context` is
- *  the disclosed fallback: the copied roles and order ride along with the first
- *  new prompt instead of arriving as provider-native conversation state. */
-export const ThreadBranchStrategy = Schema.Literals(["text-context"]);
-export type ThreadBranchStrategy = typeof ThreadBranchStrategy.Type;
-
 /** Whether the provider has taken the inherited text. `pending` survives a
- *  restart and a failed first turn, so the required context is re-supplied until
- *  the provider accepts it once. */
+ * restart and a failed first turn, so the required context is re-supplied until
+ * the provider accepts it once. */
 export const ThreadBranchInheritedContextState = Schema.Literals(["pending", "accepted"]);
 export type ThreadBranchInheritedContextState = typeof ThreadBranchInheritedContextState.Type;
 
-/** Where a branch came from. The copied prefix is exactly the first
- *  `inheritedMessageCount` messages of this thread, so the continuation context
- *  is derived from them rather than stored twice. The source survives its own
- *  deletion; clients resolve availability against the thread shell. */
+/** Where a branch came from. The provider receives the copied conversation as
+ * text with the branch's first prompt, so the prefix is exactly the first
+ * `inheritedMessageCount` messages of this thread and the continuation context
+ * is derived from them rather than stored twice. The source survives its own
+ * deletion; clients resolve availability against the thread shell. */
 export const ThreadBranchProvenance = Schema.Struct({
   sourceThreadId: ThreadId,
   sourceThreadTitle: TrimmedNonEmptyString,
   sourceMessageId: MessageId,
-  strategy: ThreadBranchStrategy,
   inheritedMessageCount: NonNegativeInt,
   inheritedContextState: ThreadBranchInheritedContextState,
   createdAt: IsoDateTime,
@@ -1878,9 +1872,9 @@ export const ThreadBranchedPayload = Schema.Struct({
 });
 export type ThreadBranchedPayload = typeof ThreadBranchedPayload.Type;
 
+/** The event itself is the acceptance; nothing else about the state travels. */
 export const ThreadBranchInheritedContextAcceptedPayload = Schema.Struct({
   threadId: ThreadId,
-  inheritedContextState: ThreadBranchInheritedContextState,
   updatedAt: IsoDateTime,
 });
 export type ThreadBranchInheritedContextAcceptedPayload =

@@ -59,10 +59,7 @@ import {
   type ThreadTitleMessage,
 } from "../../textGeneration/ThreadTitleContext.ts";
 import { canReplaceThreadTitle, DEFAULT_THREAD_TITLE } from "../threadTitles.ts";
-import {
-  renderBranchInheritedContext,
-  withBranchInheritedContext,
-} from "../branchInheritedContext.ts";
+import { inheritedPrefixOf, withBranchInheritedContext } from "../branchInheritedContext.ts";
 import {
   resolveSourceControlWriterModelSelection,
   ServerSettingsService,
@@ -563,18 +560,7 @@ const make = Effect.gen(function* () {
     if (thread === undefined) {
       return undefined;
     }
-    const inherited = thread.messages
-      .slice(0, input.branchedFrom.inheritedMessageCount)
-      .filter(
-        (message): message is typeof message & { role: "user" | "assistant" } =>
-          message.role === "user" || message.role === "assistant",
-      );
-    if (inherited.length === 0) {
-      return undefined;
-    }
-    return renderBranchInheritedContext(
-      inherited.map((message) => ({ role: message.role, text: message.text })),
-    );
+    return inheritedPrefixOf(thread.messages, input.branchedFrom.inheritedMessageCount);
   });
 
   const acceptBranchInheritedContext = Effect.fnUntraced(function* (

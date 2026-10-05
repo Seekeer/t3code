@@ -671,7 +671,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...existingRow.value,
             branchedFrom: {
               ...existingRow.value.branchedFrom,
-              inheritedContextState: event.payload.inheritedContextState,
+              inheritedContextState: "accepted",
             },
             updatedAt: event.payload.updatedAt,
           });

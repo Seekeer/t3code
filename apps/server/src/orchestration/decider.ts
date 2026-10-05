@@ -48,7 +48,7 @@ import {
 import {
   BRANCH_INHERITED_CONTEXT_MAX_CHARS,
   exceedsBranchInheritedContextBudget,
-  renderBranchInheritedContext,
+  inheritedPrefixOf,
 } from "./branchInheritedContext.ts";
 import { projectEvent } from "./projector.ts";
 import { threadHasQueuedTurnStart } from "./ThreadSettlementPolicy.ts";
@@ -435,8 +435,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: `Thread '${command.sourceThreadId}' no longer exists.`,
         });
       }
-      // The read model is the whole thread, not the page a client happens to
-      // hold, so the snapshot does not depend on what was loaded.
+      // The read model is the whole thread, so the snapshot does not depend on
+      // which page of history the client happened to have loaded.
       const selectedIndex = source.messages.findIndex(
         (message) => message.id === command.sourceMessageId,
       );
@@ -453,8 +453,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         });
       }
 
-      // Reasoning traces, activities, turn diffs and checkpoints are not
-      // conversation, so only user and assistant text crosses over.
+      // Only user and assistant text crosses over: reasoning traces, activities,
+      // turn diffs and checkpoints stay with the source.
       const inheritedMessages = source.messages
         .slice(0, selectedIndex + 1)
         .filter(
@@ -479,7 +479,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: `Branching is not supported for conversations with attachments (${attachmentCount} in the copied messages).`,
         });
       }
-      const inheritedContext = renderBranchInheritedContext(inheritedMessages);
+      const inheritedContext = inheritedPrefixOf(source.messages, selectedIndex + 1);
+      if (inheritedContext === undefined) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Thread '${command.sourceThreadId}' has no conversation to inherit.`,
+        });
+      }
       if (exceedsBranchInheritedContextBudget(inheritedContext)) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
@@ -491,7 +497,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         sourceThreadId: source.id,
         sourceThreadTitle: source.title,
         sourceMessageId: selected.id,
-        strategy: "text-context",
         inheritedMessageCount: inheritedMessages.length,
         inheritedContextState: "pending",
         createdAt: command.createdAt,
@@ -2188,7 +2193,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.branch-inherited-context-accepted",
         payload: {
           threadId: command.threadId,
-          inheritedContextState: "accepted",
           updatedAt: command.createdAt,
         },
       };

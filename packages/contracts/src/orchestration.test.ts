@@ -1719,7 +1719,6 @@ it.effect("decodes a conversation branch command and its events", () =>
           sourceThreadId: "source-thread",
           sourceThreadTitle: "Source thread",
           sourceMessageId: "assistant-reply",
-          strategy: "text-context",
           inheritedMessageCount: 2,
           inheritedContextState: "pending",
           createdAt: "2026-06-06T00:02:00.000Z",
@@ -1743,14 +1742,13 @@ it.effect("decodes a conversation branch command and its events", () =>
       metadata: {},
       payload: {
         threadId: "branch-1",
-        inheritedContextState: "accepted",
         updatedAt: "2026-06-06T00:03:00.000Z",
       },
     });
     if (accepted.type !== "thread.branch-inherited-context-accepted") {
       throw new Error("Unexpected event");
     }
-    assert.strictEqual(accepted.payload.inheritedContextState, "accepted");
+    assert.strictEqual(accepted.payload.threadId, "branch-1");
   }),
 );
 

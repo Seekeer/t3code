@@ -10,9 +10,9 @@ A branch continues against the current state of the workspace, not the files as 
 
 ## The agent reads the branch as text
 
-Where your agent cannot hand over its own conversation, T3 Code sends the copied messages to it as text alongside your first prompt. The branch says so at the top of the conversation for as long as it exists. Two things are not part of that text: attachments and tool activity. A branch from a conversation that used attachments is refused rather than created without them.
+T3 Code hands your agent the copied messages as text alongside your first prompt. The branch says so, and it keeps saying so for as long as the branch exists. Two things are not part of that text: attachments and tool activity. A branch from a conversation that used attachments is refused rather than created without them.
 
-The copied conversation has to fit within your agent's input budget. If it does not, branching is refused up front instead of quietly dropping earlier messages.
+The copied conversation plus your first prompt have to fit within your agent's input budget, with room kept back for that prompt. A branch that would not fit is refused up front instead of quietly dropping earlier messages.
 
 ## Getting back to the source
 

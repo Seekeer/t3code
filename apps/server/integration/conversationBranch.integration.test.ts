@@ -16,7 +16,7 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
-import { renderBranchInheritedContext } from "../src/orchestration/branchInheritedContext.ts";
+import { inheritedPrefixOf } from "../src/orchestration/branchInheritedContext.ts";
 import {
   makeOrchestrationIntegrationHarness,
   type OrchestrationIntegrationHarness,
@@ -229,7 +229,6 @@ it.live("branches from a completed reply and continues with the inherited text",
       const branch = yield* readThreadDetail(harness, BRANCH_THREAD_ID);
       assert.isDefined(branch);
       assert.strictEqual(branch.branchedFrom?.sourceThreadId, SOURCE_THREAD_ID);
-      assert.strictEqual(branch.branchedFrom?.strategy, "text-context");
       assert.strictEqual(branch.branchedFrom?.inheritedContextState, "pending");
       assert.strictEqual(branch.projectId, PROJECT_ID);
       assert.deepStrictEqual(branch.modelSelection, sourceBefore?.modelSelection);
@@ -289,10 +288,13 @@ it.live("branches from a completed reply and continues with the inherited text",
       assert.strictEqual(firstPrompt.length, 1);
       assert.strictEqual(
         firstPrompt[0],
-        `${renderBranchInheritedContext([
-          { role: "user", text: SOURCE_QUESTION },
-          { role: "assistant", text: SOURCE_ANSWER },
-        ])}\n\nTry the other approach`,
+        `${inheritedPrefixOf(
+          [
+            { role: "user", text: SOURCE_QUESTION },
+            { role: "assistant", text: SOURCE_ANSWER },
+          ],
+          2,
+        )}\n\nTry the other approach`,
       );
 
       // A later turn must not repeat the inherited context.
@@ -317,6 +319,63 @@ it.live("branches from a completed reply and continues with the inherited text",
       const allPrompts = harness.adapterHarness!.getSentTurns(BRANCH_THREAD_ID);
       assert.strictEqual(allPrompts.length, 2);
       assert.strictEqual(allPrompts[1], "One more thing");
+    }),
+  ),
+);
+
+it.live("re-supplies the inherited context after a failed first turn", () =>
+  withHarness((harness) =>
+    Effect.gen(function* () {
+      const replyId = yield* seedCompletedSourceReply(harness);
+      yield* createBranch({
+        harness,
+        commandId: "cmd-branch-retry-create",
+        sourceMessageId: replyId,
+      });
+
+      // No queued provider response: the send fails and the branch never
+      // reaches the provider, so it still owes its context.
+      yield* startTurn({
+        harness,
+        threadId: BRANCH_THREAD_ID,
+        commandId: "cmd-branch-retry-turn-1",
+        messageId: "msg-branch-retry-user-1",
+        text: "Try the other approach",
+      });
+      const afterFailure = yield* harness.waitForThread(
+        BRANCH_THREAD_ID,
+        (entry) =>
+          entry.branchedFrom?.inheritedContextState === "pending" &&
+          entry.session?.status === "error",
+      );
+      assert.strictEqual(harness.adapterHarness!.getSentTurns(BRANCH_THREAD_ID).length, 0);
+
+      // The errored session is reused, so the retry queues against the thread.
+      yield* harness.adapterHarness!.queueTurnResponse(
+        BRANCH_THREAD_ID,
+        turnResponse({
+          idPrefix: "branch-retry",
+          threadId: BRANCH_THREAD_ID,
+          answer: "Exploring the other approach.",
+        }),
+      );
+      yield* startTurn({
+        harness,
+        threadId: BRANCH_THREAD_ID,
+        commandId: "cmd-branch-retry-turn-2",
+        messageId: "msg-branch-retry-user-2",
+        text: "Try the other approach",
+      });
+      yield* harness.waitForThread(
+        BRANCH_THREAD_ID,
+        (entry) => entry.branchedFrom?.inheritedContextState === "accepted",
+      );
+
+      const prompts = harness.adapterHarness!.getSentTurns(BRANCH_THREAD_ID);
+      assert.strictEqual(prompts.length, 1);
+      assert.include(prompts[0]!, SOURCE_QUESTION);
+      assert.include(prompts[0]!, SOURCE_ANSWER);
+      assert.include(prompts[0]!, "Try the other approach");
     }),
   ),
 );

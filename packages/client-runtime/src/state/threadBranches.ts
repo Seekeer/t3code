@@ -46,3 +46,9 @@ export function conversationBranchNotice(
     sourceAvailable: sourceThreadExists,
   };
 }
+
+/** The notice text both clients show. */
+export function conversationBranchNoticeText(notice: ConversationBranchNotice): string {
+  const inherited = notice.inheritedMessageCount === 1 ? "this message" : "these messages";
+  return `Branched from ${notice.sourceThreadTitle}. The agent received ${inherited} as text — attachments and tool activity were not carried over.`;
+}
