@@ -642,6 +642,60 @@ describe("applyThreadDetailEvent", () => {
       }
     });
 
+    it("records how a reply ended so a live event matches a snapshot", () => {
+      const streamingEvent = {
+        ...baseEventFields,
+        sequence: 6,
+        occurredAt: "2026-04-01T06:00:00.000Z",
+        aggregateKind: "thread" as const,
+        aggregateId: baseThread.id,
+        type: "thread.message-sent",
+        payload: {
+          threadId: baseThread.id,
+          messageId: MessageId.make("msg-1"),
+          role: "assistant",
+          text: "Working on it",
+          turnId: TurnId.make("turn-1"),
+          streaming: true,
+          createdAt: "2026-04-01T06:00:00.000Z",
+          updatedAt: "2026-04-01T06:00:00.000Z",
+        },
+      } as const;
+      const started = applyThreadDetailEvent(baseThread, streamingEvent);
+      expect(started.kind).toBe("updated");
+      if (started.kind !== "updated") return;
+
+      const completed = applyThreadDetailEvent(started.thread, {
+        ...streamingEvent,
+        sequence: 7,
+        payload: {
+          ...streamingEvent.payload,
+          streaming: false,
+          completion: "completed",
+          updatedAt: "2026-04-01T06:01:00.000Z",
+        },
+      });
+      expect(completed.kind).toBe("updated");
+      if (completed.kind !== "updated") return;
+      // Branching reads this off the live event; losing it here hid the action
+      // until the thread was reloaded.
+      expect(completed.thread.messages[0]?.completion).toBe("completed");
+
+      const interrupted = applyThreadDetailEvent(started.thread, {
+        ...streamingEvent,
+        sequence: 7,
+        payload: {
+          ...streamingEvent.payload,
+          streaming: false,
+          completion: "interrupted",
+          updatedAt: "2026-04-01T06:01:00.000Z",
+        },
+      });
+      expect(interrupted.kind).toBe("updated");
+      if (interrupted.kind !== "updated") return;
+      expect(interrupted.thread.messages[0]?.completion).toBe("interrupted");
+    });
+
     it("keeps imported replies turnless when delivered again", () => {
       const event = {
         ...baseEventFields,

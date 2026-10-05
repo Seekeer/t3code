@@ -2443,6 +2443,29 @@ const make = Effect.gen(function* () {
               ),
             { concurrency: 1 },
           ).pipe(Effect.asVoid);
+          // The terminal event is the authority on how the turn ended. A
+          // provider can close its last text block early and only then fail or
+          // be interrupted, which leaves a partial reply that already looks
+          // finished, so the outcome is stamped across the whole turn here.
+          const terminalCompletion = terminalTurnMessageCompletion(event);
+          const turnReplies = yield* projectionThreadMessages.listAssistantByTurnId({
+            threadId: thread.id,
+            turnId,
+          });
+          for (const reply of turnReplies) {
+            if (reply.completion === terminalCompletion) {
+              continue;
+            }
+            yield* orchestrationEngine.dispatch({
+              type: "thread.message.assistant.complete",
+              commandId: yield* providerCommandId(event, `assistant-outcome-${reply.messageId}`),
+              threadId: thread.id,
+              messageId: reply.messageId,
+              turnId,
+              completion: terminalCompletion,
+              createdAt: now,
+            });
+          }
           yield* clearAssistantMessageIdsForTurn(thread.id, turnId);
           yield* clearAssistantSegmentStateForTurn(thread.id, turnId);
           yield* clearAssistantSegmentStateForTurn(thread.id, turnId, "reasoning");

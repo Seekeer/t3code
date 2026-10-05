@@ -6,6 +6,7 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EventId,
   MessageId,
+  OrchestrationMessageCompletion,
   ProjectId,
   ProviderDriverKind,
   ThreadId,
@@ -21,6 +22,7 @@ import {
   makeOrchestrationIntegrationHarness,
   type OrchestrationIntegrationHarness,
 } from "./OrchestrationEngineHarness.integration.ts";
+import type { TurnProcessingQuiescedReceipt } from "../src/orchestration/Services/RuntimeReceiptBus.ts";
 import type {
   FixtureProviderRuntimeEvent,
   TestTurnResponse,
@@ -170,6 +172,43 @@ const readThreadDetail = (harness: OrchestrationIntegrationHarness, threadId: Th
     .getThreadDetailById(threadId, { activityKinds: [] })
     .pipe(Effect.map(Option.getOrUndefined));
 
+/**
+ * The worker's own signal that a turn finished, rather than polling for a state
+ * that happens to look right.
+ */
+const awaitTurnQuiesced = (
+  harness: OrchestrationIntegrationHarness,
+  threadId: ThreadId,
+  turnCount: number,
+) =>
+  harness.waitForReceipt(
+    (receipt): receipt is TurnProcessingQuiescedReceipt =>
+      receipt.type === "turn.processing.quiesced" &&
+      receipt.threadId === threadId &&
+      receipt.checkpointTurnCount === turnCount,
+  );
+
+/** The event that records how a reply ended. */
+const awaitReplyOutcome = (
+  harness: OrchestrationIntegrationHarness,
+  threadId: ThreadId,
+  completion: OrchestrationMessageCompletion,
+) =>
+  harness.waitForDomainEvent(
+    (event) =>
+      event.type === "thread.message-sent" &&
+      event.aggregateId === threadId &&
+      "completion" in event.payload &&
+      event.payload.completion === completion,
+  );
+
+const awaitBranchContextAccepted = (harness: OrchestrationIntegrationHarness) =>
+  harness.waitForDomainEvent(
+    (event) =>
+      event.type === "thread.branch-inherited-context-accepted" &&
+      event.aggregateId === BRANCH_THREAD_ID,
+  );
+
 /** Seeds a source thread whose first turn finished, then reports its reply id. */
 const seedCompletedSourceReply = (harness: OrchestrationIntegrationHarness) =>
   Effect.gen(function* () {
@@ -188,13 +227,9 @@ const seedCompletedSourceReply = (harness: OrchestrationIntegrationHarness) =>
       messageId: "msg-source-user",
       text: SOURCE_QUESTION,
     });
-    const thread = yield* harness.waitForThread(
-      SOURCE_THREAD_ID,
-      (entry) =>
-        entry.session?.status === "ready" &&
-        entry.messages.some((message) => message.role === "assistant" && !message.streaming),
-    );
-    const reply = thread.messages.find(
+    yield* awaitTurnQuiesced(harness, SOURCE_THREAD_ID, 1);
+    const thread = yield* readThreadDetail(harness, SOURCE_THREAD_ID);
+    const reply = thread?.messages.find(
       (message) => message.role === "assistant" && !message.streaming,
     );
     assert.isDefined(reply);
@@ -279,10 +314,8 @@ it.live("branches from a completed reply and continues with the inherited text",
         messageId: "msg-branch-user-1",
         text: "Try the other approach",
       });
-      yield* harness.waitForThread(
-        BRANCH_THREAD_ID,
-        (entry) => entry.branchedFrom?.inheritedContextState === "accepted",
-      );
+      yield* awaitBranchContextAccepted(harness);
+      yield* awaitTurnQuiesced(harness, BRANCH_THREAD_ID, 1);
 
       const firstPrompt = harness.adapterHarness!.getSentTurns(BRANCH_THREAD_ID);
       assert.strictEqual(firstPrompt.length, 1);
@@ -313,9 +346,7 @@ it.live("branches from a completed reply and continues with the inherited text",
         messageId: "msg-branch-user-2",
         text: "One more thing",
       });
-      yield* harness.waitForThread(BRANCH_THREAD_ID, (entry) =>
-        entry.messages.some((message) => message.text === "One more thing, handled."),
-      );
+      yield* awaitTurnQuiesced(harness, BRANCH_THREAD_ID, 2);
       const allPrompts = harness.adapterHarness!.getSentTurns(BRANCH_THREAD_ID);
       assert.strictEqual(allPrompts.length, 2);
       assert.strictEqual(allPrompts[1], "One more thing");
@@ -342,12 +373,13 @@ it.live("re-supplies the inherited context after a failed first turn", () =>
         messageId: "msg-branch-retry-user-1",
         text: "Try the other approach",
       });
-      const afterFailure = yield* harness.waitForThread(
-        BRANCH_THREAD_ID,
-        (entry) =>
-          entry.branchedFrom?.inheritedContextState === "pending" &&
-          entry.session?.status === "error",
+      const afterFailure = yield* harness.waitForDomainEvent(
+        (event) =>
+          event.type === "thread.session-set" &&
+          event.aggregateId === BRANCH_THREAD_ID &&
+          event.payload.session.status === "error",
       );
+      assert.isDefined(afterFailure);
       assert.strictEqual(harness.adapterHarness!.getSentTurns(BRANCH_THREAD_ID).length, 0);
 
       // The errored session is reused, so the retry queues against the thread.
@@ -366,10 +398,8 @@ it.live("re-supplies the inherited context after a failed first turn", () =>
         messageId: "msg-branch-retry-user-2",
         text: "Try the other approach",
       });
-      yield* harness.waitForThread(
-        BRANCH_THREAD_ID,
-        (entry) => entry.branchedFrom?.inheritedContextState === "accepted",
-      );
+      yield* awaitBranchContextAccepted(harness);
+      yield* awaitTurnQuiesced(harness, BRANCH_THREAD_ID, 1);
 
       const prompts = harness.adapterHarness!.getSentTurns(BRANCH_THREAD_ID);
       assert.strictEqual(prompts.length, 1);
@@ -432,10 +462,10 @@ it.live("refuses to branch a reply left partial by an interrupted turn", () =>
         messageId: "msg-source-user-interrupted",
         text: SOURCE_QUESTION,
       });
-      const source = yield* harness.waitForThread(SOURCE_THREAD_ID, (entry) =>
-        entry.messages.some((message) => message.role === "assistant" && !message.streaming),
-      );
-      const partial = source.messages.find(
+      yield* awaitReplyOutcome(harness, SOURCE_THREAD_ID, "interrupted");
+      yield* awaitTurnQuiesced(harness, SOURCE_THREAD_ID, 1);
+      const source = yield* readThreadDetail(harness, SOURCE_THREAD_ID);
+      const partial = source?.messages.find(
         (message) => message.role === "assistant" && !message.streaming,
       );
       assert.isDefined(partial);
@@ -459,6 +489,51 @@ it.live("refuses to branch a reply left partial by an interrupted turn", () =>
     }),
   ),
 );
+
+for (const status of ["failed", "interrupted"] as const) {
+  it.live(`refuses a reply the provider closed before its ${status} turn ended`, () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        yield* seedProject(harness);
+        // The provider closes the text block itself and only then reports the
+        // turn as ended badly, so the reply looks finished until the terminal
+        // event corrects it.
+        yield* harness.adapterHarness!.queueTurnResponseForNextSession(
+          turnResponse({
+            idPrefix: `closed-then-${status}`,
+            threadId: SOURCE_THREAD_ID,
+            answer: "Half an answer before everything went wrong.",
+            status,
+          }),
+        );
+        yield* startTurn({
+          harness,
+          threadId: SOURCE_THREAD_ID,
+          commandId: `cmd-source-closed-then-${status}`,
+          messageId: `msg-source-user-closed-${status}`,
+          text: SOURCE_QUESTION,
+        });
+        yield* awaitReplyOutcome(harness, SOURCE_THREAD_ID, status);
+        yield* awaitTurnQuiesced(harness, SOURCE_THREAD_ID, 1);
+        const source = yield* readThreadDetail(harness, SOURCE_THREAD_ID);
+        const reply = source?.messages.find(
+          (message) => message.role === "assistant" && !message.streaming,
+        );
+        assert.isDefined(reply);
+        assert.strictEqual(reply.completion, status);
+
+        const error = yield* Effect.flip(
+          createBranch({
+            harness,
+            commandId: `cmd-branch-closed-then-${status}`,
+            sourceMessageId: reply.id,
+          }),
+        );
+        assert.include(error.message, "is not a completed agent reply");
+      }),
+    ),
+  );
+}
 
 it.live("keeps a branch and its pending context across a restart", () =>
   Effect.gen(function* () {
@@ -501,10 +576,8 @@ it.live("keeps a branch and its pending context across a restart", () =>
             messageId: "msg-branch-restart-user",
             text: "Continuing after the restart",
           });
-          yield* harness.waitForThread(
-            BRANCH_THREAD_ID,
-            (entry) => entry.branchedFrom?.inheritedContextState === "accepted",
-          );
+          yield* awaitBranchContextAccepted(harness);
+          yield* awaitTurnQuiesced(harness, BRANCH_THREAD_ID, 1);
           const prompt = harness.adapterHarness!.getSentTurns(BRANCH_THREAD_ID);
           assert.strictEqual(prompt.length, 1);
           assert.include(prompt[0]!, SOURCE_QUESTION);

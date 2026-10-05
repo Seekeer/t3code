@@ -50,6 +50,13 @@ export const ListProjectionThreadMessagesInput = Schema.Struct({
 });
 export type ListProjectionThreadMessagesInput = typeof ListProjectionThreadMessagesInput.Type;
 
+export const ListProjectionThreadMessagesByTurnInput = Schema.Struct({
+  threadId: ThreadId,
+  turnId: TurnId,
+});
+export type ListProjectionThreadMessagesByTurnInput =
+  typeof ListProjectionThreadMessagesByTurnInput.Type;
+
 export const GetProjectionThreadMessageInput = Schema.Struct({
   messageId: MessageId,
 });
@@ -107,6 +114,16 @@ export interface ProjectionThreadMessageRepositoryShape {
    */
   readonly listByThreadId: (
     input: ListProjectionThreadMessagesInput,
+  ) => Effect.Effect<ReadonlyArray<ProjectionThreadMessage>, ProjectionRepositoryError>;
+
+  /**
+   * List the assistant replies a turn produced, oldest first.
+   *
+   * A turn that ends badly can still have had its text closed early, so the
+   * terminal outcome is stamped onto the whole set afterwards.
+   */
+  readonly listAssistantByTurnId: (
+    input: ListProjectionThreadMessagesByTurnInput,
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadMessage>, ProjectionRepositoryError>;
 
   /** Read the latest user-message timestamp without loading message bodies. */

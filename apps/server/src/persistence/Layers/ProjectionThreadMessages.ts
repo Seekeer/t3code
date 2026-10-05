@@ -19,6 +19,7 @@ import {
   ProjectionThreadMessageRepository,
   type ProjectionThreadMessageRepositoryShape,
   DeleteProjectionThreadMessagesInput,
+  ListProjectionThreadMessagesByTurnInput,
   ListProjectionThreadMessagesInput,
   ProjectionThreadMessage,
 } from "../Services/ProjectionThreadMessages.ts";
@@ -239,6 +240,31 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
       `,
   });
 
+  const listProjectionThreadAssistantRowsByTurn = SqlSchema.findAll({
+    Request: ListProjectionThreadMessagesByTurnInput,
+    Result: ProjectionThreadMessageDbRowSchema,
+    execute: ({ threadId, turnId }) =>
+      sql`
+        SELECT
+          message_id AS "messageId",
+          thread_id AS "threadId",
+          turn_id AS "turnId",
+          role,
+          text,
+          attachments_json AS "attachments",
+          context_json AS "context",
+          completion,
+          is_streaming AS "isStreaming",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"
+        FROM projection_thread_messages
+        WHERE thread_id = ${threadId}
+          AND turn_id = ${turnId}
+          AND role = 'assistant'
+        ORDER BY created_at ASC, message_id ASC
+      `,
+  });
+
   const getLatestUserMessageAtRow = SqlSchema.findOne({
     Request: ListProjectionThreadMessagesInput,
     Result: Schema.Struct({
@@ -300,6 +326,16 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
       Effect.map((rows) => rows.map(toProjectionThreadMessage)),
     );
 
+  const listAssistantByTurnId: ProjectionThreadMessageRepositoryShape["listAssistantByTurnId"] = (
+    input,
+  ) =>
+    listProjectionThreadAssistantRowsByTurn(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlError("ProjectionThreadMessageRepository.listAssistantByTurnId:query"),
+      ),
+      Effect.map((rows) => rows.map(toProjectionThreadMessage)),
+    );
+
   const getLatestUserMessageAt: ProjectionThreadMessageRepositoryShape["getLatestUserMessageAt"] = (
     input,
   ) =>
@@ -323,6 +359,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
     getByMessageId,
     hasAssistantMessageForTurn,
     listByThreadId,
+    listAssistantByTurnId,
     getLatestUserMessageAt,
     deleteByThreadId,
   } satisfies ProjectionThreadMessageRepositoryShape;

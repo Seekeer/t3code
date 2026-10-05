@@ -397,6 +397,9 @@ export function applyThreadDetailEvent(
         ...(event.payload.context !== undefined ? { context: event.payload.context } : {}),
         turnId: event.payload.turnId,
         streaming: event.payload.streaming,
+        // How a reply ended decides whether it can be branched from, so a live
+        // event has to carry it like a snapshot does.
+        ...(event.payload.completion !== undefined ? { completion: event.payload.completion } : {}),
         createdAt: event.payload.createdAt,
         updatedAt: event.payload.updatedAt,
       };
@@ -417,6 +420,7 @@ export function applyThreadDetailEvent(
           ...(message.streaming ? {} : { updatedAt: message.updatedAt }),
           ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
           ...(message.context !== undefined ? { context: message.context } : {}),
+          ...(message.completion !== undefined ? { completion: message.completion } : {}),
         };
       });
       if (!found) messages.push(message);
