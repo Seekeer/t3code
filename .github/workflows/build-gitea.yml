@@ -1,5 +1,7 @@
 name: Build Windows installer
 
+# Personal fork Windows build. Upstream runs on Blacksmith runners that do not
+# exist in this fork, so this uses a GitHub-hosted Windows runner instead.
 on:
   workflow_dispatch:
     inputs:
@@ -8,6 +10,9 @@ on:
         required: true
         default: main
         type: string
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
