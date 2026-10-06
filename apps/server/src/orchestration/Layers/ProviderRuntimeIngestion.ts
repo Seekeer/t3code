@@ -2444,34 +2444,6 @@ const make = Effect.gen(function* () {
               ),
             { concurrency: 1 },
           ).pipe(Effect.asVoid);
-          // The terminal event is the authority on how the turn ended, so this is where
-          // a reply's outcome is recorded. A provider can close its last text
-          // block early and only then fail or be interrupted, and a reply closed
-          // that way must not read as finished. Skipped when the lifecycle guard
-          // rejects the event: a delayed stop for a turn that already succeeded
-          // must not reach back and undo a good reply. An outcome that is
-          // already recorded stands, so the first terminal event for a turn wins.
-          if (shouldApplyThreadLifecycle) {
-            const terminalCompletion = terminalTurnMessageCompletion(event);
-            const turnReplies = yield* projectionThreadMessages.listAssistantByTurnId({
-              threadId: thread.id,
-              turnId,
-            });
-            for (const reply of turnReplies) {
-              if (reply.completion !== undefined) {
-                continue;
-              }
-              yield* orchestrationEngine.dispatch({
-                type: "thread.message.assistant.complete",
-                commandId: yield* providerCommandId(event, `assistant-outcome-${reply.messageId}`),
-                threadId: thread.id,
-                messageId: reply.messageId,
-                turnId,
-                completion: terminalCompletion,
-                createdAt: now,
-              });
-            }
-          }
           yield* clearAssistantMessageIdsForTurn(thread.id, turnId);
           yield* clearAssistantSegmentStateForTurn(thread.id, turnId);
           yield* clearAssistantSegmentStateForTurn(thread.id, turnId, "reasoning");
@@ -2516,6 +2488,43 @@ const make = Effect.gen(function* () {
             },
             createdAt: now,
           });
+        }
+      }
+
+      // Outside the lifecycle guard on purpose. A terminal event is the authority
+      // on how its turn ended, and that stays true once a later turn has taken
+      // over: the first success for a turn must be recorded even when the session
+      // has already moved past it, or the reply is left with no outcome and can
+      // never be branched from. A provider can also close a reply's last text
+      // block early and only then fail or be interrupted, so a reply closed that
+      // way must not read as finished either.
+      //
+      // A reply that already carries an outcome is left alone, which makes the
+      // first terminal event for a turn the one that decides it - that is what
+      // stops a delayed stop from reaching back and undoing a turn that had
+      // already succeeded.
+      if (isTerminalTurn) {
+        const outcomeTurnId = toTurnId(event.turnId);
+        if (outcomeTurnId !== undefined) {
+          const terminalCompletion = terminalTurnMessageCompletion(event);
+          const turnReplies = yield* projectionThreadMessages.listAssistantByTurnId({
+            threadId: thread.id,
+            turnId: outcomeTurnId,
+          });
+          for (const reply of turnReplies) {
+            if (reply.completion !== undefined) {
+              continue;
+            }
+            yield* orchestrationEngine.dispatch({
+              type: "thread.message.assistant.complete",
+              commandId: yield* providerCommandId(event, `assistant-outcome-${reply.messageId}`),
+              threadId: thread.id,
+              messageId: reply.messageId,
+              turnId: outcomeTurnId,
+              completion: terminalCompletion,
+              createdAt: now,
+            });
+          }
         }
       }
 

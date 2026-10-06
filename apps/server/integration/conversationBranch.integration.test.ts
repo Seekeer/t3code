@@ -573,8 +573,12 @@ it.live("refuses a reply whose turn has not ended yet", () =>
         messageId: "msg-source-user-still-running",
         text: SOURCE_QUESTION,
       });
-      // The reply has been closed by the provider, so the assertion below is about a
-      // settled state rather than a race with the close itself.
+      // The provider closed the reply but left the turn running, so the last event
+      // in the stream is the close. Confirming that event and then draining means
+      // the ingestion has consumed the whole stream: nothing further can arrive
+      // for this turn, so the state below is settled rather than mid-flight. No
+      // timeout is needed, and none is used - a turn that never ends can never
+      // produce an outcome, so waiting for one would only prove the clock ran out.
       yield* harness.waitForDomainEvent(
         (event) =>
           event.type === "thread.message-sent" &&
@@ -582,22 +586,18 @@ it.live("refuses a reply whose turn has not ended yet", () =>
           event.payload.role === "assistant" &&
           event.payload.streaming === false,
       );
-      const outcomeWhileRunning = yield* awaitReplyOutcome(
-        harness,
-        SOURCE_THREAD_ID,
-        "completed",
-      ).pipe(Effect.timeoutOption("2 seconds"));
-      assert.isTrue(
-        Option.isNone(outcomeWhileRunning),
-        "a reply must not be marked finished while its turn is still running",
-      );
+      yield* harness.drainProviderRuntime;
 
       const source = yield* readThreadDetail(harness, SOURCE_THREAD_ID);
       const runningReply = source?.messages.find(
         (message) => message.role === "assistant" && !message.streaming,
       );
       assert.isDefined(runningReply);
-      assert.isUndefined(runningReply.completion);
+      assert.isUndefined(
+        runningReply.completion,
+        "a reply must not be marked finished while its turn is still running",
+      );
+      assert.strictEqual(source?.session?.status, "running");
 
       const error = yield* Effect.flip(
         createBranch({
@@ -643,7 +643,6 @@ it.live("keeps a finished reply branchable after a delayed stop for its turn", (
       // has to survive that rejection too. The adapter numbers a thread's turns,
       // so the finished one is `turn-1` and the late stop names it.
       yield* harness.adapterHarness!.queueTurnResponse(SOURCE_THREAD_ID, {
-        leaveTurnOpen: true,
         events: [
           {
             type: "turn.started",
@@ -656,6 +655,20 @@ it.live("keeps a finished reply branchable after a delayed stop for its turn", (
             ...runtimeBase("late-stop"),
             threadId: SOURCE_THREAD_ID,
             providerTurnId: "turn-1",
+            reason: "the provider stopped a turn that had already finished",
+          },
+          {
+            type: "message.delta",
+            ...runtimeBase("late-stop-delta"),
+            threadId: SOURCE_THREAD_ID,
+            turnId: "turn-2",
+            delta: "Still working on the follow-up.",
+          },
+          {
+            type: "message.completed",
+            ...runtimeBase("late-stop-message"),
+            threadId: SOURCE_THREAD_ID,
+            turnId: "turn-2",
           },
         ] satisfies ReadonlyArray<FixtureProviderRuntimeEvent>,
       });
@@ -666,15 +679,17 @@ it.live("keeps a finished reply branchable after a delayed stop for its turn", (
         messageId: "msg-source-user-late-stop",
         text: "A follow-up question",
       });
-      // The next turn is running, so the late stop belongs to no active turn and
-      // is rejected. Waiting for the turn to start and then for the ingestion to
-      // be idle means the stop has been handled; the turn is left open on
-      // purpose, since a rejected stop produces nothing to wait for.
+      // A rejected stop produces no event of its own, so it cannot be waited on
+      // directly. The follow-up turn's own closed reply is emitted after the stop
+      // and the ingestion consumes events in order, so seeing that reply closed
+      // proves the stop was handled rather than merely queued. The follow-up turn
+      // is left open so the only terminal event in this stream is the late stop.
       yield* harness.waitForDomainEvent(
         (event) =>
-          event.type === "thread.session-set" &&
+          event.type === "thread.message-sent" &&
           event.aggregateId === SOURCE_THREAD_ID &&
-          event.payload.session.activeTurnId === "turn-2",
+          event.payload.role === "assistant" &&
+          event.payload.streaming === false,
       );
       yield* harness.drainProviderRuntime;
 
