@@ -227,6 +227,7 @@ const seedCompletedSourceReply = (harness: OrchestrationIntegrationHarness) =>
       messageId: "msg-source-user",
       text: SOURCE_QUESTION,
     });
+    yield* awaitReplyOutcome(harness, SOURCE_THREAD_ID, "completed");
     yield* awaitTurnQuiesced(harness, SOURCE_THREAD_ID, 1);
     const thread = yield* readThreadDetail(harness, SOURCE_THREAD_ID);
     const reply = thread?.messages.find(
@@ -535,6 +536,163 @@ for (const status of ["failed", "interrupted"] as const) {
   );
 }
 
+it.live("refuses a reply whose turn has not ended yet", () =>
+  withHarness((harness) =>
+    Effect.gen(function* () {
+      yield* seedProject(harness);
+      // The provider closes the reply and the turn simply keeps running: tools,
+      // a long think, anything. Closing text is not the same as finishing.
+      yield* harness.adapterHarness!.queueTurnResponseForNextSession({
+        leaveTurnOpen: true,
+        events: [
+          {
+            type: "turn.started",
+            ...runtimeBase("still-running-started"),
+            threadId: SOURCE_THREAD_ID,
+            turnId: "still-running-turn",
+          },
+          {
+            type: "message.delta",
+            ...runtimeBase("still-running-delta"),
+            threadId: SOURCE_THREAD_ID,
+            turnId: "still-running-turn",
+            delta: "Working on it, not finished yet.",
+          },
+          {
+            type: "message.completed",
+            ...runtimeBase("still-running-message"),
+            threadId: SOURCE_THREAD_ID,
+            turnId: "still-running-turn",
+          },
+        ] satisfies ReadonlyArray<FixtureProviderRuntimeEvent>,
+      });
+      yield* startTurn({
+        harness,
+        threadId: SOURCE_THREAD_ID,
+        commandId: "cmd-source-still-running",
+        messageId: "msg-source-user-still-running",
+        text: SOURCE_QUESTION,
+      });
+      // The reply has been closed by the provider, so the assertion below is about a
+      // settled state rather than a race with the close itself.
+      yield* harness.waitForDomainEvent(
+        (event) =>
+          event.type === "thread.message-sent" &&
+          event.aggregateId === SOURCE_THREAD_ID &&
+          event.payload.role === "assistant" &&
+          event.payload.streaming === false,
+      );
+      const outcomeWhileRunning = yield* awaitReplyOutcome(
+        harness,
+        SOURCE_THREAD_ID,
+        "completed",
+      ).pipe(Effect.timeoutOption("2 seconds"));
+      assert.isTrue(
+        Option.isNone(outcomeWhileRunning),
+        "a reply must not be marked finished while its turn is still running",
+      );
+
+      const source = yield* readThreadDetail(harness, SOURCE_THREAD_ID);
+      const runningReply = source?.messages.find(
+        (message) => message.role === "assistant" && !message.streaming,
+      );
+      assert.isDefined(runningReply);
+      assert.isUndefined(runningReply.completion);
+
+      const error = yield* Effect.flip(
+        createBranch({
+          harness,
+          commandId: "cmd-branch-still-running",
+          sourceMessageId: runningReply.id,
+        }),
+      );
+      assert.include(error.message, "is not a completed agent reply");
+    }),
+  ),
+);
+
+it.live("keeps a finished reply branchable after a delayed stop for its turn", () =>
+  withHarness((harness) =>
+    Effect.gen(function* () {
+      yield* seedProject(harness);
+      yield* harness.adapterHarness!.queueTurnResponseForNextSession(
+        turnResponse({
+          idPrefix: "good",
+          threadId: SOURCE_THREAD_ID,
+          answer: SOURCE_ANSWER,
+        }),
+      );
+      yield* startTurn({
+        harness,
+        threadId: SOURCE_THREAD_ID,
+        commandId: "cmd-source-good-turn",
+        messageId: "msg-source-user-good",
+        text: SOURCE_QUESTION,
+      });
+      yield* awaitReplyOutcome(harness, SOURCE_THREAD_ID, "completed");
+      yield* awaitTurnQuiesced(harness, SOURCE_THREAD_ID, 1);
+      const good = yield* readThreadDetail(harness, SOURCE_THREAD_ID);
+      const goodReply = good?.messages.find(
+        (message) => message.role === "assistant" && !message.streaming,
+      );
+      assert.isDefined(goodReply);
+      assert.strictEqual(goodReply.completion, "completed");
+
+      // A stop for the turn that already succeeded arrives during the next one.
+      // The lifecycle guard rejects it for session state, and the reply's outcome
+      // has to survive that rejection too. The adapter numbers a thread's turns,
+      // so the finished one is `turn-1` and the late stop names it.
+      yield* harness.adapterHarness!.queueTurnResponse(SOURCE_THREAD_ID, {
+        leaveTurnOpen: true,
+        events: [
+          {
+            type: "turn.started",
+            ...runtimeBase("late-stop-started"),
+            threadId: SOURCE_THREAD_ID,
+            turnId: "turn-2",
+          },
+          {
+            type: "turn.aborted",
+            ...runtimeBase("late-stop"),
+            threadId: SOURCE_THREAD_ID,
+            providerTurnId: "turn-1",
+          },
+        ] satisfies ReadonlyArray<FixtureProviderRuntimeEvent>,
+      });
+      yield* startTurn({
+        harness,
+        threadId: SOURCE_THREAD_ID,
+        commandId: "cmd-source-late-stop-turn",
+        messageId: "msg-source-user-late-stop",
+        text: "A follow-up question",
+      });
+      // The next turn is running, so the late stop belongs to no active turn and
+      // is rejected. Waiting for the turn to start and then for the ingestion to
+      // be idle means the stop has been handled; the turn is left open on
+      // purpose, since a rejected stop produces nothing to wait for.
+      yield* harness.waitForDomainEvent(
+        (event) =>
+          event.type === "thread.session-set" &&
+          event.aggregateId === SOURCE_THREAD_ID &&
+          event.payload.session.activeTurnId === "turn-2",
+      );
+      yield* harness.drainProviderRuntime;
+
+      const after = yield* readThreadDetail(harness, SOURCE_THREAD_ID);
+      const stillGood = after?.messages.find((message) => message.id === goodReply.id);
+      assert.strictEqual(stillGood?.completion, "completed");
+
+      // Still branchable.
+      yield* createBranch({
+        harness,
+        commandId: "cmd-branch-after-late-stop",
+        sourceMessageId: goodReply.id,
+      });
+      const branch = yield* readThreadDetail(harness, BRANCH_THREAD_ID);
+      assert.strictEqual(branch?.branchedFrom?.sourceMessageId, goodReply.id);
+    }),
+  ),
+);
 it.live("keeps a branch and its pending context across a restart", () =>
   Effect.gen(function* () {
     const rootDir = yield* Effect.acquireUseRelease(

@@ -2349,9 +2349,10 @@ const make = Effect.gen(function* () {
             commandTag: "assistant-complete",
             finalDeltaCommandTag: "assistant-delta-finalize",
             hasProjectedMessage: existingAssistantMessage !== undefined,
-            // The provider closed this reply itself, so the turn reached a
-            // normal end regardless of what comes after it.
-            completion: "completed",
+            // No outcome here: the provider closing a text block says the text
+            // stopped, not that the reply finished. A provider closes blocks on
+            // the way to failing or being interrupted, so the turn's terminal
+            // event decides the outcome for every reply it produced.
             ...(assistantCompletion.fallbackText !== undefined && shouldApplyFallbackCompletionText
               ? { fallbackText: assistantCompletion.fallbackText }
               : {}),
@@ -2443,28 +2444,33 @@ const make = Effect.gen(function* () {
               ),
             { concurrency: 1 },
           ).pipe(Effect.asVoid);
-          // The terminal event is the authority on how the turn ended. A
-          // provider can close its last text block early and only then fail or
-          // be interrupted, which leaves a partial reply that already looks
-          // finished, so the outcome is stamped across the whole turn here.
-          const terminalCompletion = terminalTurnMessageCompletion(event);
-          const turnReplies = yield* projectionThreadMessages.listAssistantByTurnId({
-            threadId: thread.id,
-            turnId,
-          });
-          for (const reply of turnReplies) {
-            if (reply.completion === terminalCompletion) {
-              continue;
-            }
-            yield* orchestrationEngine.dispatch({
-              type: "thread.message.assistant.complete",
-              commandId: yield* providerCommandId(event, `assistant-outcome-${reply.messageId}`),
+          // The terminal event is the authority on how the turn ended, so this is where
+          // a reply's outcome is recorded. A provider can close its last text
+          // block early and only then fail or be interrupted, and a reply closed
+          // that way must not read as finished. Skipped when the lifecycle guard
+          // rejects the event: a delayed stop for a turn that already succeeded
+          // must not reach back and undo a good reply. An outcome that is
+          // already recorded stands, so the first terminal event for a turn wins.
+          if (shouldApplyThreadLifecycle) {
+            const terminalCompletion = terminalTurnMessageCompletion(event);
+            const turnReplies = yield* projectionThreadMessages.listAssistantByTurnId({
               threadId: thread.id,
-              messageId: reply.messageId,
               turnId,
-              completion: terminalCompletion,
-              createdAt: now,
             });
+            for (const reply of turnReplies) {
+              if (reply.completion !== undefined) {
+                continue;
+              }
+              yield* orchestrationEngine.dispatch({
+                type: "thread.message.assistant.complete",
+                commandId: yield* providerCommandId(event, `assistant-outcome-${reply.messageId}`),
+                threadId: thread.id,
+                messageId: reply.messageId,
+                turnId,
+                completion: terminalCompletion,
+                createdAt: now,
+              });
+            }
           }
           yield* clearAssistantMessageIdsForTurn(thread.id, turnId);
           yield* clearAssistantSegmentStateForTurn(thread.id, turnId);

@@ -27,6 +27,11 @@ import type {
 
 export interface TestTurnResponse {
   readonly events: ReadonlyArray<FixtureProviderRuntimeEvent>;
+  /**
+   * Leave the turn open. A turn is normally closed for you when the fixture
+   * carries no terminal event; this models a turn that is still running.
+   */
+  readonly leaveTurnOpen?: boolean;
   readonly mutateWorkspace?: (input: {
     readonly cwd: string;
     readonly turnCount: number;
@@ -189,6 +194,8 @@ export interface TestProviderAdapterHarness {
   readonly getStartCount: () => number;
   /** Prompts this adapter was actually asked to send, in order. */
   readonly getSentTurns: (threadId: ThreadId) => ReadonlyArray<string>;
+  /** Runtime event types this adapter emitted for a thread, in order. */
+  readonly getEmittedEventTypes: (threadId: ThreadId) => ReadonlyArray<string>;
   readonly getRollbackCalls: (threadId: ThreadId) => ReadonlyArray<number>;
   readonly getInterruptCalls: (threadId: ThreadId) => ReadonlyArray<TurnId | undefined>;
   readonly listActiveSessionIds: () => ReadonlyArray<ThreadId>;
@@ -234,6 +241,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
     const queuedResponsesForNextSession: TestTurnResponse[] = [];
     const interruptCallsBySession = new Map<ThreadId, Array<TurnId | undefined>>();
     const sentTurnsBySession = new Map<ThreadId, string[]>();
+    const emittedEventTypesBySession = new Map<ThreadId, string[]>();
     const approvalResponsesBySession = new Map<
       ThreadId,
       Array<{
@@ -243,7 +251,13 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       }>
     >();
 
-    const emit = (event: ProviderRuntimeEvent) => Queue.offer(runtimeEvents, event);
+    const emit = (event: ProviderRuntimeEvent) =>
+      Effect.gen(function* () {
+        const emitted = emittedEventTypesBySession.get(event.threadId) ?? [];
+        emitted.push(event.type);
+        emittedEventTypesBySession.set(event.threadId, emitted);
+        yield* Queue.offer(runtimeEvents, event);
+      }).pipe(Effect.asVoid);
     const nextEventId = (threadId: ThreadId) => {
       eventCount += 1;
       return EventId.make(`test-provider:${provider}:${threadId}:${eventCount}`);
@@ -324,7 +338,13 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
             sessionId: RuntimeSessionId.make(String(input.threadId)),
           };
           rawEvent.threadId = state.snapshot.threadId;
-          if (Object.hasOwn(rawEvent, "turnId")) {
+          // `providerTurnId` lets a fixture address an earlier turn, which is how
+          // a provider's delayed stop for a turn that already finished is staged.
+          const providerTurnId = rawEvent.providerTurnId;
+          delete rawEvent.providerTurnId;
+          if (typeof providerTurnId === "string") {
+            rawEvent.turnId = providerTurnId;
+          } else if (Object.hasOwn(rawEvent, "turnId")) {
             rawEvent.turnId = turnId;
           }
 
@@ -373,7 +393,9 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
           turns: [...state.snapshot.turns, nextTurn],
         };
 
-        if (deferredTurnCompletedEvents.length === 0) {
+        if (response.leaveTurnOpen === true) {
+          // Nothing: the turn stays running, as a provider mid-work would.
+        } else if (deferredTurnCompletedEvents.length === 0) {
           yield* emit({
             type: "turn.completed",
             eventId: nextEventId(input.threadId),
@@ -539,6 +561,10 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       ...(sentTurnsBySession.get(threadId) ?? []),
     ];
 
+    const getEmittedEventTypes = (threadId: ThreadId): ReadonlyArray<string> => [
+      ...(emittedEventTypesBySession.get(threadId) ?? []),
+    ];
+
     const getInterruptCalls = (threadId: ThreadId): ReadonlyArray<TurnId | undefined> => {
       const calls = interruptCallsBySession.get(threadId);
       if (!calls) {
@@ -571,6 +597,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       queueTurnResponseForNextSession,
       getStartCount,
       getSentTurns,
+      getEmittedEventTypes,
       getRollbackCalls,
       getInterruptCalls,
       listActiveSessionIds,
