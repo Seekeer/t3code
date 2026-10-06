@@ -643,6 +643,7 @@ it.live("keeps a finished reply branchable after a delayed stop for its turn", (
       // has to survive that rejection too. The adapter numbers a thread's turns,
       // so the finished one is `turn-1` and the late stop names it.
       yield* harness.adapterHarness!.queueTurnResponse(SOURCE_THREAD_ID, {
+        leaveTurnOpen: true,
         events: [
           {
             type: "turn.started",
@@ -655,7 +656,9 @@ it.live("keeps a finished reply branchable after a delayed stop for its turn", (
             ...runtimeBase("late-stop"),
             threadId: SOURCE_THREAD_ID,
             providerTurnId: "turn-1",
-            reason: "the provider stopped a turn that had already finished",
+            payload: {
+              reason: "the provider stopped a turn that had already finished",
+            },
           },
           {
             type: "message.delta",
@@ -688,12 +691,15 @@ it.live("keeps a finished reply branchable after a delayed stop for its turn", (
         (event) =>
           event.type === "thread.message-sent" &&
           event.aggregateId === SOURCE_THREAD_ID &&
+          event.payload.turnId === "turn-2" &&
           event.payload.role === "assistant" &&
           event.payload.streaming === false,
       );
       yield* harness.drainProviderRuntime;
 
       const after = yield* readThreadDetail(harness, SOURCE_THREAD_ID);
+      assert.strictEqual(after?.session?.status, "running");
+      assert.strictEqual(after?.session?.activeTurnId, "turn-2");
       const stillGood = after?.messages.find((message) => message.id === goodReply.id);
       assert.strictEqual(stillGood?.completion, "completed");
 
