@@ -11,7 +11,7 @@ import {
 } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { CornerLeftUpIcon, FolderIcon } from "lucide-react";
-import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
+import { useState, type KeyboardEvent } from "react";
 
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { filesystemEnvironment } from "~/state/filesystem";
@@ -85,7 +85,7 @@ function ProjectFolderPickerBody(props: {
   const { onClose, onSelect, platform } = props;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
 
-  const browsePath = useMemo(() => getFilesystemBrowsePath(query, platform), [platform, query]);
+  const browsePath = getFilesystemBrowsePath(query, platform);
   const browseState = useEnvironmentQuery(
     browsePath.directoryPath.length > 0
       ? filesystemEnvironment.browse({
@@ -95,14 +95,10 @@ function ProjectFolderPickerBody(props: {
       : null,
   );
   const browseResult = browseState.data;
-  // Only the environment saying "I cannot read this directory" means the folder
-  // is gone. An unreachable environment fails the same request in a different
-  // shape, and blaming the folder for that sends the user to the wrong place.
-  const browseDirectoryIsMissing = isMissingDirectoryBrowseError(browseState.cause);
 
-  const { visibleEntries, exactEntry } = useMemo(
-    () => filterFilesystemBrowseEntries(browseResult?.entries ?? [], browsePath.filterQuery),
-    [browsePath.filterQuery, browseResult?.entries],
+  const { visibleEntries, exactEntry } = filterFilesystemBrowseEntries(
+    browseResult?.entries ?? [],
+    browsePath.filterQuery,
   );
 
   const selection = resolveProjectFolderSelection({
@@ -114,61 +110,51 @@ function ProjectFolderPickerBody(props: {
 
   const canSubmitSelection = selection.ok && !browseState.isPending;
 
-  const selectResolvedFolder = useCallback(() => {
+  const selectResolvedFolder = () => {
     if (selection.ok) {
       onSelect(selection.path);
     }
-  }, [onSelect, selection]);
+  };
 
   /**
    * Enter takes the folder the input points at, which is the whole point of the
    * dialog. Descending into a subfolder needs an explicit highlight, because
    * auto-highlighting one would turn a typed path into a surprise.
    */
-  const handleInputKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLInputElement>) => {
-      if (event.key !== "Enter" || highlightedItemValue !== null) {
-        return;
-      }
-      if (!canSubmitSelection) {
-        return;
-      }
-      event.preventDefault();
-      selectResolvedFolder();
-    },
-    [canSubmitSelection, highlightedItemValue, selectResolvedFolder],
-  );
+  const handleInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter" || highlightedItemValue !== null) {
+      return;
+    }
+    if (!canSubmitSelection) {
+      return;
+    }
+    event.preventDefault();
+    selectResolvedFolder();
+  };
 
-  const browseTo = useCallback(
-    (name: string) => {
-      setHighlightedItemValue(null);
-      setQuery(appendBrowsePathSegment(query, name));
-    },
-    [query],
-  );
+  const browseTo = (name: string) => {
+    setHighlightedItemValue(null);
+    setQuery(appendBrowsePathSegment(query, name));
+  };
 
-  const browseUp = useCallback(() => {
+  const browseUp = () => {
     const parentPath = getBrowseParentPath(query);
     if (parentPath === null) {
       return;
     }
     setHighlightedItemValue(null);
     setQuery(parentPath);
-  }, [query]);
+  };
 
-  const groups = useMemo(
-    () =>
-      buildBrowseGroups({
-        browseEntries: visibleEntries,
-        browseQuery: query,
-        canBrowseUp: canNavigateUp(query),
-        upIcon: <CornerLeftUpIcon className={ITEM_ICON_CLASS} />,
-        directoryIcon: <FolderIcon className={ITEM_ICON_CLASS} />,
-        browseUp,
-        browseTo,
-      }),
-    [browseTo, browseUp, query, visibleEntries],
-  );
+  const groups = buildBrowseGroups({
+    browseEntries: visibleEntries,
+    browseQuery: query,
+    canBrowseUp: canNavigateUp(query),
+    upIcon: <CornerLeftUpIcon className={ITEM_ICON_CLASS} />,
+    directoryIcon: <FolderIcon className={ITEM_ICON_CLASS} />,
+    browseUp,
+    browseTo,
+  });
 
   const ariaLabel = `Change folder for ${props.projectName}`;
 
