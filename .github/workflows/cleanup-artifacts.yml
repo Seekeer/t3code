@@ -1,0 +1,57 @@
+name: Keep latest artifact of each type
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Build Windows installer","CI","Forward to Cursor hygiene","Deploy T3 Connect relay","Desktop macOS Preview Publish","Desktop macOS Preview","Issue Labels","Mobile Android APK","Mobile EAS Preview","Mobile EAS Production","Mobile Fingerprint Check","Mobile Showcase Screenshots","PR Size","PR Vouch","Publish AUR package","Release desktop build","Release","Thread Transfer Report","Windows Tests"]
+    types: [completed]
+  schedule:
+    - cron: '23 * * * *'
+permissions:
+  actions: write
+concurrency:
+  group: keep-latest-artifacts
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    if: github.server_url == 'https://github.com'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const artifacts = await github.paginate(github.rest.actions.listArtifactsForRepo, { owner, repo, per_page: 100 });
+            const groups = new Map();
+            for (const artifact of artifacts) {
+              if (artifact.expired) continue;
+              const type = artifact.name.replace(/-[0-9a-f]{40}$/i, '');
+              if (!groups.has(type)) groups.set(type, []);
+              groups.get(type).push(artifact);
+            }
+            const runs = new Map();
+            for (const [type, items] of groups) {
+              items.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id);
+              let kept = false;
+              for (const artifact of items) {
+                const runId = artifact.workflow_run?.id;
+                if (!runId) throw new Error(`Missing workflow run for artifact ${artifact.id}`);
+                if (!runs.has(runId)) {
+                  runs.set(runId, (await github.rest.actions.getWorkflowRun({ owner, repo, run_id: runId })).data);
+                }
+                // A build may still be uploading other files; retain its artifacts until it finishes.
+                if (runs.get(runId).status !== 'completed') continue;
+                if (!kept) {
+                  core.info(`Keep ${type}: ${artifact.id} (${artifact.size_in_bytes} bytes)`);
+                  kept = true;
+                  continue;
+                }
+                try {
+                  await github.rest.actions.deleteArtifact({ owner, repo, artifact_id: artifact.id });
+                } catch (error) {
+                  // Expiration or manual cleanup may already have removed this artifact.
+                  if (error.status !== 404) throw error;
+                }
+                core.info(`Deleted ${type}: ${artifact.id}`);
+              }
+            }
