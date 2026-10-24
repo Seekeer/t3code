@@ -46,7 +46,12 @@ jobs:
                   kept = true;
                   continue;
                 }
-                await github.rest.actions.deleteArtifact({ owner, repo, artifact_id: artifact.id });
+                try {
+                  await github.rest.actions.deleteArtifact({ owner, repo, artifact_id: artifact.id });
+                } catch (error) {
+                  // Expiration or manual cleanup may already have removed this artifact.
+                  if (error.status !== 404) throw error;
+                }
                 core.info(`Deleted ${type}: ${artifact.id}`);
               }
             }
