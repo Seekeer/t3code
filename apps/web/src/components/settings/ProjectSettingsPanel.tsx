@@ -14,10 +14,10 @@ import { isMissingDirectoryBrowseError } from "@t3tools/client-runtime/state/fil
 import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
 import { AsyncResult } from "effect/reactivity";
 import { type EnvironmentId, type ProjectIconOverride } from "@t3tools/contracts";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { Navigate, useLocation, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
 import { FolderIcon, InfoIcon, Trash2Icon } from "lucide-react";
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
@@ -55,6 +55,7 @@ import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
+import { readUnloadedThreadCount } from "../../state/olderSettledShelf";
 import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 
 const ProjectIconPickerDialog = lazy(() =>
@@ -64,6 +65,30 @@ const ProjectIconPickerDialog = lazy(() =>
 );
 
 export type ProjectSettingsCategory = "general" | "source-control" | "project";
+
+interface ProjectSelection {
+  readonly key: string;
+  readonly environmentId: EnvironmentId | null;
+  readonly checkoutKey: string | null;
+  readonly memberKeys: ReadonlyArray<string>;
+}
+
+// Members are tracked by id, not by the path-derived physical key: changing a project's
+// folder changes that key, and the project must still be found afterwards.
+function memberKey(member: { environmentId: string; id: string }): string {
+  return `${member.environmentId}:${member.id}`;
+}
+
+function sameProjectSelection(a: ProjectSelection | null, b: ProjectSelection): boolean {
+  return (
+    a !== null &&
+    a.key === b.key &&
+    a.environmentId === b.environmentId &&
+    a.checkoutKey === b.checkoutKey &&
+    a.memberKeys.length === b.memberKeys.length &&
+    a.memberKeys.every((key, index) => key === b.memberKeys[index])
+  );
+}
 
 export function ProjectSettingsPanel({
   projectKey,
@@ -77,7 +102,6 @@ export function ProjectSettingsPanel({
   unavailable?: ReactNode;
 }) {
   const groups = useSettingsProjectGroups();
-  const navigate = useNavigate({ from: "/settings" });
   const pathname = useLocation({ select: (location) => location.pathname });
 
   const selected = groups.find((group) => group.projectKey === projectKey) ?? null;
@@ -88,50 +112,47 @@ export function ProjectSettingsPanel({
         (checkoutKey === null || member.physicalProjectKey === checkoutKey),
     ) ?? [];
 
-  // Remember the members of the last rendered group so a change that replaces
-  // the group key mid-visit (a grouping rule, or a folder change) can follow
-  // the project to its new group. Members are remembered by id, not by the
-  // path-derived physical key: changing a project's folder changes that key,
-  // and the project must still be found afterwards.
-  const lastSelectionRef = useRef<{ key: string; memberIds: string[] } | null>(null);
-  useEffect(() => {
-    if (!selected || members.length === 0) return;
-    lastSelectionRef.current = {
+  // Retain group members so a grouping-rule or folder change can follow the project to its new
+  // group. Members are tracked by id: a folder change replaces the path-derived physical key.
+  const [lastSelection, setLastSelection] = useState<ProjectSelection | null>(null);
+  if (selected && members.length > 0) {
+    const current: ProjectSelection = {
       key: selected.projectKey,
-      memberIds: selected.memberProjects.map((member) => memberKey(member)),
+      environmentId,
+      checkoutKey,
+      memberKeys: selected.memberProjects.map((member) => memberKey(member)),
     };
-  }, [selected, members]);
+    if (!sameProjectSelection(lastSelection, current)) setLastSelection(current);
+  }
 
-  // A grouping-rule or folder change replaces the group key mid-visit; follow
-  // the project to its new key instead of parking on the not-found state.
-  useEffect(() => {
-    if (members.length > 0) return;
-    const last = lastSelectionRef.current;
-    if (last?.key !== projectKey) return;
-    const memberIds = new Set(last.memberIds);
-    const successor = groups.find((group) =>
-      group.memberProjects.some((member) => memberIds.has(memberKey(member))),
+  const successor =
+    members.length === 0 && lastSelection?.key === projectKey
+      ? groups.find((group) =>
+          group.memberProjects.some((member) =>
+            lastSelection.memberKeys.includes(memberKey(member)),
+          ),
+        )
+      : undefined;
+  if (successor !== undefined && lastSelection !== null) {
+    // A checkout narrowing is a physical key, and a folder change replaces it. Carry the
+    // successor's own key over so the panel stays on the checkout the user was editing.
+    const successorMember = successor.memberProjects.find((member) =>
+      lastSelection.memberKeys.includes(memberKey(member)),
     );
-    if (successor) {
-      // A checkout narrowing is a physical key, and a folder change replaces
-      // it. Carry the successor's own key over so the panel stays on the
-      // checkout the user was editing.
-      const successorMember = successor.memberProjects.find((member) =>
-        memberIds.has(memberKey(member)),
-      );
-      void navigate({
-        to: pathname,
-        search: () => ({
+    return (
+      <Navigate
+        to={pathname}
+        search={{
           project: successor.projectKey,
           machine: environmentId ?? undefined,
           checkout:
             checkoutKey === null ? undefined : (successorMember?.physicalProjectKey ?? undefined),
-        }),
-        replace: true,
-        hashScrollIntoView: false,
-      });
-    }
-  }, [groups, navigate, pathname, projectKey, members.length, environmentId, checkoutKey]);
+        }}
+        replace
+        hashScrollIntoView={false}
+      />
+    );
+  }
 
   // A folder change replaces the group key, which remounts ProjectDetail. The
   // path it replaced has to outlive that remount or there would be no way back.
@@ -346,6 +367,7 @@ function ProjectDetail(props: {
       hasOtherMembers,
       displayName: group.displayName,
       threads,
+      unloadedThreadCount: readUnloadedThreadCount(members, threads),
     });
     const confirmed = await settlePromise(() =>
       api.dialogs.confirm(confirmationMessage, { variant: "destructive" }),
