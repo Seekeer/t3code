@@ -91,18 +91,16 @@ Then resolve the run the push created:
 ```bash
 fork=$(git remote get-url origin | sed -E 's#(\.git)?/*$##; s#.*[:/]([^/]+/[^/]+)$#\1#')
 sha=$(git rev-parse HEAD)
-for i in $(seq 1 30); do
-  run=$(gh run list --repo "$fork" --workflow build-gitea.yml --limit 20 \
-    --json databaseId,headSha,event --jq "[.[] | select(.headSha==\"$sha\" and .event==\"push\")][0].databaseId")
-  [ -n "$run" ] && break; sleep 10
-done
+run=$(gh run list --repo "$fork" --workflow build-gitea.yml --commit "$sha" --event push \
+  --json databaseId --jq '.[0].databaseId')
 ```
 
 Derive the fork from the `origin` URL, never from `gh repo view`: when the user is logged in as an
 upstream maintainer, `gh repo view` describes the checkout's upstream, and the run lookups then 404
 against a repository with no `build-gitea.yml`. `gh run list` takes `OWNER/REPO`, never a remote
-name like `origin`. When the fork has never pushed the branch, `--limit 20` can page past the
-matching run; raise the limit rather than assuming the newest run is the right one.
+name like `origin`, and `--commit` filters server-side, so no `--jq` string matching is needed. If the
+run is still missing, workflow dispatch can lag the push by a few seconds; retry before concluding the
+push did not trigger a build.
 
 ## 5. Wait for the job
 
@@ -123,29 +121,36 @@ When the run is `failure` or `cancelled`:
 - Cancelled or superseded attempt — re-resolve the run from step 4 and continue from step 5, since
   only the newest attempt publishes artifacts.
 
-## 6. Hand over the artifact link
+## 6. Hand over the release link
 
-There is no GitHub Release in the fork (`release.yml` is disabled there); the installer is the
-workflow artifact. Resolve it from the run that just succeeded:
+`build-gitea.yml` publishes the installer to its own `build-<short sha>` release when the build passes,
+and prunes older `build-*` releases down to the two newest. Resolve the link from that release:
 
 ```bash
-gh run view "$run" --repo "$fork" --json attempt
-id=$(gh api "repos/$fork/actions/runs/$run/artifacts" \
-  --jq '.artifacts[] | select(.name=="t3-desktop-windows-x64") | .id')
+tag="build-$(git rev-parse --short HEAD)"
+gh release view "$tag" --repo "$fork" --json assets --jq '.assets[].name'
 ```
 
-Artifacts belong to a run attempt, so read `attempt` from the run and mention it when the build needed
-more than one. Give the user both forms:
+Give the release page and the asset URL, then confirm the download works before reporting it:
 
-- **Human page:** `https://github.com/$fork/actions/runs/$run` — open the run, download
-  `t3-desktop-windows-x64` from its Artifacts section. Sign in to GitHub first; the run page works for
-  the repository owner in a browser.
-- **Direct file:** `https://github.com/$fork/actions/artifacts/$id/zip` — the zip itself,
-  no navigation. This URL requires an authenticated request (browser session or `gh`); unauthenticated
-  requests get `404`, because GitHub hides artifacts from anonymous callers.
+```bash
+curl -sIL -o /dev/null -w '%{http_code}\n' \
+  "https://github.com/$fork/releases/download/$tag/<asset>.exe"
+```
 
-The artifact expires in 30 days and `cleanup-artifacts.yml` keeps only the newest one per name, so
-older installers disappear as new builds land. Say that in the answer.
+A release asset answers `200` anonymously after its redirect. Report that status in the answer, because
+"the build is green" on its own does not mean the user can download anything.
+
+The workflow needs `permissions: contents: write` to publish and prune. If releases stop appearing while
+the build stays green, check that permission first; a fork can also disable workflow write access
+entirely in its settings.
+
+Workflow artifacts are no longer produced, and the old `actions/artifacts/<id>/zip` URL is not a
+download link for a human: it answers `302` to a blob URL signed for about ten minutes, and a browser
+lands on `404`. Never offer it as "the direct link".
+
+Only the two newest `build-*` releases survive a build. If the user needs a specific build kept, say so
+before the next one runs, or it is deleted with its tag.
 
 ## Report
 

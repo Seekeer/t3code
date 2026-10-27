@@ -15,7 +15,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   windows:
@@ -65,10 +65,45 @@ jobs:
       - name: Build Windows installer
         run: vp run dist:desktop:win
 
-      - name: Upload Windows installer
-        uses: actions/upload-artifact@v7
-        with:
-          name: t3-desktop-windows-x64
-          path: release/*.exe
-          if-no-files-found: error
-          retention-days: 30
+      # The installer goes to a release rather than a workflow artifact: release
+      # assets are public and permanent, while artifacts expire in 30 days, need
+      # `gh` or a signed-in browser, and count against the Actions storage quota.
+      - name: Publish Windows installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $sha = "${{ github.sha }}"
+          $short = $sha.Substring(0, 8)
+          $tag = "build-$short"
+          $exe = Get-ChildItem release\*.exe | Select-Object -First 1
+          if ($null -eq $exe) { Write-Error "No installer in release\"; exit 1 }
+          gh release view $tag --repo "${{ github.repository }}" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag already exists; uploading assets."
+          } else {
+            gh release create $tag --repo "${{ github.repository }}" --target $sha `
+              --title "Build $short" --notes "Windows x64 installer built from ${sha}." --latest=false
+          }
+          gh release upload $tag $exe.FullName --repo "${{ github.repository }}" --clobber
+
+      # Unbounded builds would leave a 160 MB installer per release forever.
+      - name: Keep the 2 newest build releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          keep=2
+          # Newest first, so everything past the first two goes.
+          tags=$(gh release list --repo "${{ github.repository }}" --limit 100 \
+            --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[].tagName' \
+            | grep '^build-')
+          stale=$(printf '%s\n' "$tags" | tail -n +$((keep + 1)))
+          if [[ -z "$stale" ]]; then
+            echo "Only $(printf '%s\n' "$tags" | grep -c . || true) build release(s); nothing to prune."
+            exit 0
+          fi
+          for tag in $stale; do
+            echo "Deleting $tag"
+            gh release delete "$tag" --repo "${{ github.repository }}" --yes --cleanup-tag
+          done
