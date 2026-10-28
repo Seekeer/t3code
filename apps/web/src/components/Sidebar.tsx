@@ -93,6 +93,7 @@ import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { isMacPlatform } from "~/lib/utils";
+import { projectMatchesQuery } from "~/projectFilter";
 import { readLocalApi } from "../localApi";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { selectProjectGroupingSettings } from "../logicalProject";
@@ -1029,7 +1030,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const filteredProjectScopeItems = filterSidebarProjectScopeItems({
     items: projectScopeItems,
     query: projectScopeMenuState.query,
+    // Кириллическая раскладка: «Алууе» находит «Fleet».
     matches: (item, query) =>
+      projectMatchesQuery(query, item.label) ||
       projectScopeFilter.contains(item, query, (candidate) => candidate.label),
   });
   const scopedProjectGroup = revealWidensScope ? null : chosenProjectGroup;

@@ -32,6 +32,7 @@ import { type ReactNode } from "react";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";
 import { isSidebarSubagentThread } from "./Sidebar.logic";
+import { matchesProjectSearchKeys, projectSearchKeys, toLatinLayout } from "../projectFilter";
 
 export const RECENT_THREAD_LIMIT = 12;
 export const ITEM_ICON_CLASS = "size-4 text-icon-muted";
@@ -488,7 +489,7 @@ function rankPaletteItem(
   item: PaletteItem,
   normalizedQuery: string,
   now: number,
-  options: { readonly typos: boolean },
+  options: { readonly typos: boolean; readonly latinQuery: string },
 ): {
   readonly score: number;
   readonly quality: number;
@@ -509,7 +510,7 @@ function scorePaletteItem(
   item: PaletteItem,
   normalizedQuery: string,
   now: number,
-  options: { readonly typos: boolean },
+  options: { readonly typos: boolean; readonly latinQuery: string },
 ) {
   if (item.threadSearch) return scoreThreadSearch(normalizedQuery, item.threadSearch, now, options);
   // The title names the item; search terms are keywords. Ranges index the
@@ -519,7 +520,18 @@ function scorePaletteItem(
     name !== undefined && name !== item.searchTerms[0]
       ? [name, ...item.searchTerms]
       : item.searchTerms;
-  const match = scoreSearchTerms(normalizedQuery, terms, options);
+  // Кириллическая раскладка: «Алууе» находит проект «Fleet». Проекты несут в
+  // searchTerms свой путь, поэтому проверка сужена до имени.
+  const projectName = typeof item.title === "string" ? item.title : "";
+  const match =
+    scoreSearchTerms(
+      projectName !== "" &&
+        matchesProjectSearchKeys(normalizedQuery, projectSearchKeys(projectName))
+        ? options.latinQuery
+        : normalizedQuery,
+      terms,
+      options,
+    ) ?? scoreSearchTerms(normalizedQuery, terms, options);
   return match && (item.title === terms[0] ? match : { ...match, ranges: [] });
 }
 
@@ -608,9 +620,10 @@ export function filterCommandPaletteGroups(input: {
   }
 
   const now = input.now ?? Date.now();
+  const latinQuery = foldSearchQuery(toLatinLayout(searchQuery));
   const ranked = rankSearchGroups(
     searchableGroups.map((group) => ({ group, items: group.items })),
-    (item, options) => rankPaletteItem(item, normalizedQuery, now, options),
+    (item, options) => rankPaletteItem(item, normalizedQuery, now, { ...options, latinQuery }),
   );
   const threadsMatch = ranked.some(({ group }) => group.value === "threads-search");
   const groups = ranked.map(({ group, ranked }): CommandPaletteGroup => {

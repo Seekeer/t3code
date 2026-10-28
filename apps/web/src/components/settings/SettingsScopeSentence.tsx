@@ -4,6 +4,7 @@ import { CheckIcon, ChevronDownIcon, LayersIcon } from "lucide-react";
 import { Fragment, useState, type ReactNode } from "react";
 
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
+import { projectMatchesQuery } from "../../projectFilter";
 import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ProjectFavicon } from "../ProjectFavicon";
@@ -154,8 +155,10 @@ function ScopeMenu({
   const choices = allOption ? [allOption, ...options] : options;
   if (options.length > 6) {
     const needle = query.trim().toLowerCase();
-    const filteredItems = choices.filter((option) =>
-      `${option.label} ${option.secondary ?? ""} ${option.value}`.toLowerCase().includes(needle),
+    const filteredItems = choices.filter(
+      (option) =>
+        projectMatchesQuery(needle, option.label) ||
+        `${option.label} ${option.secondary ?? ""} ${option.value}`.toLowerCase().includes(needle),
     );
     return (
       <Combobox

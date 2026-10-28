@@ -25,6 +25,7 @@ import {
 } from "~/sidebarProjectGrouping";
 import { useProjects, useThreadShells } from "~/state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
+import { projectMatchesQuery } from "~/projectFilter";
 import { ProjectEnvironmentBadge } from "../ProjectEnvironmentBadge";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { sortLogicalProjectsForSidebar } from "../Sidebar.logic";
@@ -155,7 +156,9 @@ export function DraftHeroHeadline({
       : pickerItems.filter(
           (item) =>
             item.value !== ADD_PROJECT_VALUE &&
-            pickerFilter.contains(item, pickerSearch, (candidate) => candidate.label),
+            // Кириллическая раскладка: «Алууе» находит «Fleet».
+            (projectMatchesQuery(pickerSearch, item.label) ||
+              pickerFilter.contains(item, pickerSearch, (candidate) => candidate.label)),
         );
   const selectedPickerItem = pickerItems.find((item) => item.value === activeProjectKey) ?? null;
 

@@ -439,6 +439,33 @@ describe("buildThreadActionItems", () => {
     expect(groups[1]?.items.at(-1)?.title).toBe("New thread layout");
   });
 
+  it("finds projects typed in the Russian keyboard layout", () => {
+    for (const [title, query] of [
+      ["Fleet", "Алууе"],
+      ["qwerty", "йцукен"],
+    ]) {
+      const item = {
+        kind: "action" as const,
+        value: `project:${title}`,
+        searchTerms: [title, `/code/${title}`],
+        title,
+        icon: null,
+        run: async () => undefined,
+      };
+      const groups = filterCommandPaletteGroups({
+        activeGroups: [],
+        query,
+        isInSubmenu: false,
+        projectSearchItems: [item],
+        threadSearchItems: [],
+      });
+      expect(
+        groups.flatMap((group) => group.items),
+        query,
+      ).toEqual([expect.objectContaining({ value: item.value })]);
+    }
+  });
+
   it("lists a project above threads that only hold its name when the name is typed", () => {
     const threadSearchItems = buildThreadActionItems({
       threads: [makeThread({ title: "Lakebed performance gains" })],
