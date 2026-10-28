@@ -440,10 +440,7 @@ describe("buildThreadActionItems", () => {
   });
 
   it("finds projects typed in the Russian keyboard layout", () => {
-    for (const [title, query] of [
-      ["Fleet", "Алууе"],
-      ["qwerty", "йцукен"],
-    ]) {
+    for (const [title, query] of [["Fleet", "Алууе"] as const, ["qwerty", "йцукен"]]) {
       const item = {
         kind: "action" as const,
         value: `project:${title}`,

@@ -32,7 +32,7 @@ import { useThreadShells, waitForProjectRemoval } from "../../state/entities";
 import { filesystemEnvironment } from "../../state/filesystem";
 import { projectEnvironment } from "../../state/projects";
 import { useEnvironmentQuery } from "../../state/query";
-import { ensureBrowseDirectoryPath } from "../../lib/projectPaths";
+import { ensureBrowseDirectoryPath } from "@t3tools/client-runtime/state/projects";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
