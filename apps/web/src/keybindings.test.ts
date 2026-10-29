@@ -809,6 +809,35 @@ describe("composer and pull request shortcuts", () => {
     },
   );
 
+  it("opens the reasoning picker on Mod+Shift+comma including in editable fields", () => {
+    for (const platform of ["Win32", "MacIntel"]) {
+      const mod = platform === "MacIntel" ? { metaKey: true } : { ctrlKey: true };
+      const shortcut = event({ key: "<", code: "Comma", shiftKey: true, ...mod });
+      for (const editableFocus of [false, true]) {
+        assert.strictEqual(
+          resolveShortcutCommand(shortcut, DEFAULT_RESOLVED_KEYBINDINGS, {
+            platform,
+            context: { editableFocus },
+          }),
+          "composer.effort",
+        );
+      }
+      assert.isNull(
+        resolveShortcutCommand(
+          event({ key: "<", code: "Comma", shiftKey: true }),
+          DEFAULT_RESOLVED_KEYBINDINGS,
+          { platform, context: { editableFocus: true } },
+        ),
+      );
+      assert.isNull(
+        resolveShortcutCommand(shortcut, DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform,
+          context: { terminalFocus: true },
+        }),
+      );
+    }
+  });
+
   const altEffortBindings = compileResolvedKeybindingsConfig([
     { key: "mod+alt+e", command: "composer.effort", when: "!terminalFocus" },
   ]);
