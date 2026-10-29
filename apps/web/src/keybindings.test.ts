@@ -397,6 +397,25 @@ describe("model picker navigation helpers", () => {
       "thread.jump.3",
     );
   });
+
+  it("leaves digits to the open run context menu on both the thread jump and picker bindings", () => {
+    const input = event({ key: "1", ctrlKey: true });
+    for (const modelPickerOpen of [false, true]) {
+      assert.isNull(
+        resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform: "Win32",
+          context: { isDesktop: true, modelPickerOpen, runContextMenuOpen: true },
+        }),
+      );
+    }
+    assert.strictEqual(
+      resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Win32",
+        context: { isDesktop: true, runContextMenuOpen: false },
+      }),
+      "thread.jump.1",
+    );
+  });
 });
 
 describe("chat/editor shortcuts", () => {

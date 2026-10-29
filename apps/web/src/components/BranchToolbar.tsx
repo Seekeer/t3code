@@ -8,9 +8,11 @@ import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { FolderGit2Icon, FolderGitIcon, FolderIcon, PlusIcon, ScaleIcon } from "lucide-react";
 import {
   type Ref,
+  type RefObject,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
   memo,
+  useEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -56,11 +58,17 @@ import {
   MenuRadioGroup,
   MenuRadioItem,
   MenuSeparator,
+  MenuShortcut,
   MenuSub,
   MenuSubPopup,
   MenuSubTrigger,
   MenuTrigger,
 } from "./ui/menu";
+import {
+  MAX_RUN_CONTEXT_SHORTCUTS,
+  runContextShortcutIndex,
+  runContextShortcutLabel,
+} from "./runContextMenuShortcuts";
 import { Separator } from "./ui/separator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { MiddleTruncate } from "./ui/middle-truncate";
@@ -162,6 +170,57 @@ interface RunContextSelectorProps {
   onAddToMachine: (environmentId: EnvironmentId) => void;
 }
 
+const RUN_CONTEXT_OPEN_ITEM_SELECTOR = [
+  '[data-slot="menu-radio-item"]:not([data-disabled])',
+  '[data-slot="menu-item"]:not([data-disabled])',
+].join(", ");
+
+/** The digit a row shows, numbered across both groups so Ctrl+1 always hits the first visible row. */
+function RunContextShortcut({ index }: { index: number }) {
+  if (index >= MAX_RUN_CONTEXT_SHORTCUTS) return null;
+  const label = runContextShortcutLabel(index, navigator.platform);
+  return (
+    <MenuShortcut aria-hidden="true" className="shrink-0">
+      {label}
+    </MenuShortcut>
+  );
+}
+
+/**
+ * Cmd/Ctrl digits pick a row while the menu is open. Base UI routes popup keys to list
+ * navigation and typeahead without cancelling them, so the window-level resolver would otherwise
+ * claim the same chord for a thread jump before the menu sees it.
+ */
+function useRunContextDigitShortcuts({
+  open,
+  popupRef,
+}: {
+  open: boolean;
+  popupRef: RefObject<HTMLDivElement | null>;
+}) {
+  const platform = navigator.platform;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps a window keydown listener in step with the menu's open state while it is mounted
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return;
+      const index = runContextShortcutIndex(event, platform);
+      const item =
+        index === null
+          ? null
+          : popupRef.current?.querySelectorAll(RUN_CONTEXT_OPEN_ITEM_SELECTOR)[index];
+      if (!item) return;
+      event.preventDefault();
+      event.stopPropagation();
+      item.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, view: window }),
+      );
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [open, platform, popupRef]);
+}
+
 const RunContextSelector = memo(function RunContextSelector({
   displayMode = "toolbar",
   workspaceRoot,
@@ -185,6 +244,8 @@ const RunContextSelector = memo(function RunContextSelector({
   onAddToMachine,
 }: RunContextSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuPopupRef = useRef<HTMLDivElement>(null);
   const activeEnvironment =
     availableEnvironments?.find((env) => env.environmentId === environmentId) ?? null;
   const WorkspaceIcon =
@@ -211,6 +272,11 @@ const RunContextSelector = memo(function RunContextSelector({
       showWorkspaceContextMenu(event, workspacePath);
     }
   };
+  useRunContextDigitShortcuts({
+    open: isMenuOpen,
+    popupRef: menuPopupRef,
+  });
+  const environmentItemCount = (onAutoEnvironment ? 1 : 0) + (availableEnvironments?.length ?? 0);
   const workspaceIcon = (
     <Tooltip>
       <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
@@ -285,7 +351,7 @@ const RunContextSelector = memo(function RunContextSelector({
   }
 
   return (
-    <Menu>
+    <Menu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
       <MenuTrigger
         render={isPanel ? <ThreadDetailsControl part="select" /> : <ComposerControl size="xs" />}
         className={isPanel ? undefined : "min-w-0 max-w-[48%] flex-initial justify-start"}
@@ -311,6 +377,7 @@ const RunContextSelector = memo(function RunContextSelector({
         {triggerContent}
       </MenuTrigger>
       <MenuPopup
+        ref={menuPopupRef}
         align="start"
         side={isPanel ? "bottom" : "top"}
         className={
@@ -344,15 +411,16 @@ const RunContextSelector = memo(function RunContextSelector({
                       if (autoEnvironmentLabel) onAutoEnvironment?.();
                     }}
                   >
-                    <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="flex min-w-0 flex-1 items-center gap-1.5">
                       <ScaleIcon className="size-3" aria-hidden="true" />
                       <span className="min-w-0 truncate">
                         {autoEnvironmentLabel ?? "Auto balance"}
                       </span>
                     </span>
+                    <RunContextShortcut index={0} />
                   </MenuRadioItem>
                 )}
-                {availableEnvironments.map((env) => (
+                {availableEnvironments.map((env, index) => (
                   <MenuRadioItem
                     key={env.environmentId}
                     disabled={
@@ -361,10 +429,11 @@ const RunContextSelector = memo(function RunContextSelector({
                     value={env.environmentId}
                     closeOnClick
                   >
-                    <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="flex min-w-0 flex-1 items-center gap-1.5">
                       <EnvironmentMachineIcon kind={env.machine} className="size-3" />
                       <span className="min-w-0 truncate">{env.label}</span>
                     </span>
+                    <RunContextShortcut index={index + (onAutoEnvironment ? 1 : 0)} />
                   </MenuRadioItem>
                 ))}
               </MenuRadioGroup>
@@ -408,7 +477,7 @@ const RunContextSelector = memo(function RunContextSelector({
             }}
           >
             <MenuRadioItem disabled={envModeLocked || forceNewWorktree} value="local" closeOnClick>
-              <span className="flex min-w-0 items-center gap-1.5">
+              <span className="flex min-w-0 flex-1 items-center gap-1.5">
                 {activeWorktreePath ? (
                   <FolderGitIcon className="size-3" />
                 ) : (
@@ -416,16 +485,21 @@ const RunContextSelector = memo(function RunContextSelector({
                 )}
                 <MiddleTruncate value={resolveCurrentWorkspaceLabel(activeWorktreePath)} />
               </span>
+              <RunContextShortcut index={environmentItemCount} />
             </MenuRadioItem>
             <MenuRadioItem disabled={envModeLocked} value="worktree" closeOnClick>
-              <span className="flex min-w-0 items-center gap-1.5">
+              <span className="flex min-w-0 flex-1 items-center gap-1.5">
                 <FolderGit2Icon className="size-3" />
                 <span className="min-w-0 truncate">{resolveEnvModeLabel("worktree")}</span>
               </span>
+              <RunContextShortcut index={environmentItemCount + 1} />
             </MenuRadioItem>
             {previousWorktreeLabel ? (
               <MenuRadioItem disabled={envModeLocked} value="previous-worktree" closeOnClick>
-                <PreviousWorktreeItemContent branch={previousWorktreeBranch} />
+                <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                  <PreviousWorktreeItemContent branch={previousWorktreeBranch} />
+                </span>
+                <RunContextShortcut index={environmentItemCount + 2} />
               </MenuRadioItem>
             ) : null}
           </MenuRadioGroup>
