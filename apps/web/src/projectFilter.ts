@@ -40,7 +40,7 @@ for (const latin of Object.keys(CYRILLIC_UNIT_BY_LATIN)) {
 }
 
 /** Текст проекта так, как он выглядел бы, если набрать его в кириллице. */
-export function toCyrillicLayout(text: string): string {
+function toCyrillicLayout(text: string): string {
   let result = "";
   for (const character of text.normalize("NFC").toLowerCase()) {
     const unit = CYRILLIC_UNIT_BY_LATIN[character.toLowerCase()];

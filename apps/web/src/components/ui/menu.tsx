@@ -220,12 +220,15 @@ function MenuRadioGroup(props: MenuPrimitive.RadioGroup.Props) {
   return <MenuPrimitive.RadioGroup data-slot="menu-radio-group" {...props} />;
 }
 
+/** `endContent` sits outside the truncating content span so it can't be squeezed to a second line. */
 function MenuRadioItem({
   className,
   children,
+  endContent,
   hideIndicator: _hideIndicator = false,
   ...props
 }: MenuPrimitive.RadioItem.Props & {
+  endContent?: React.ReactNode;
   hideIndicator?: boolean;
 }) {
   return (
@@ -238,6 +241,7 @@ function MenuRadioItem({
       {...props}
     >
       <span className="min-w-0 flex-1">{children}</span>
+      {endContent}
     </MenuPrimitive.RadioItem>
   );
 }

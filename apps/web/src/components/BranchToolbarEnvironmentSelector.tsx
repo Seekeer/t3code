@@ -6,10 +6,11 @@ import { shortcutLabelForCommand } from "../keybindings";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { PlusIcon, ScaleIcon } from "lucide-react";
-import { memo } from "react";
+import { memo, useRef, useState } from "react";
 
 import { ADD_TO_MACHINE_LABEL_CLASS, type EnvironmentOption } from "./BranchToolbar.logic";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
+import { RunContextShortcut, useRunContextDigitShortcuts } from "./runContextMenuShortcuts";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import {
   Select,
@@ -45,6 +46,9 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   onAddToMachine,
 }: BranchToolbarEnvironmentSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
+  const [open, setOpen] = useState(false);
+  const popupRef = useRef<HTMLDivElement>(null);
+  useRunContextDigitShortcuts({ open, popupRef });
   const shortcutLabel = shortcutLabelForCommand(
     useAtomValue(primaryServerKeybindingsAtom),
     "composer.host",
@@ -89,6 +93,8 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   return (
     <Select
       modal={false}
+      open={open}
+      onOpenChange={setOpen}
       value={autoEnvironmentLabel ? AUTO_VALUE : environmentValue(environmentId)}
       onValueChange={(value) => {
         if (value === ADD_MACHINE_VALUE) {
@@ -130,7 +136,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
           {shortcutLabel ? ` · ${shortcutLabel}` : null}
         </TooltipPopup>
       </Tooltip>
-      <SelectPopup alignItemWithTrigger={false} {...composerFloatingLayerProps}>
+      <SelectPopup ref={popupRef} alignItemWithTrigger={false} {...composerFloatingLayerProps}>
         <SelectGroup>
           <SelectGroupLabel>Run on</SelectGroupLabel>
           {onAutoEnvironment && (
@@ -139,30 +145,39 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
               onClick={() => {
                 if (autoEnvironmentLabel) onAutoEnvironment?.();
               }}
+              endContent={<RunContextShortcut index={0} />}
             >
               <span className="inline-flex items-center gap-1.5">
                 <ScaleIcon className="size-3" aria-hidden="true" />
-                {autoEnvironmentLabel ?? "Auto balance"}
+                <span className="truncate">{autoEnvironmentLabel ?? "Auto balance"}</span>
               </span>
             </SelectItem>
           )}
-          {availableEnvironments.map((env) => (
+          {availableEnvironments.map((env, index) => (
             <SelectItem
               key={env.environmentId}
               value={environmentValue(env.environmentId)}
               disabled={onEnvironmentChange === undefined && env.environmentId !== environmentId}
+              endContent={<RunContextShortcut index={index + (onAutoEnvironment ? 1 : 0)} />}
             >
               <span className="inline-flex items-center gap-1.5">
                 <EnvironmentMachineIcon kind={env.machine} className="size-3" />
-                {env.label}
+                <span className="truncate">{env.label}</span>
               </span>
             </SelectItem>
           ))}
           {onAddToMachine ? (
-            <SelectItem value={ADD_MACHINE_VALUE}>
+            <SelectItem
+              value={ADD_MACHINE_VALUE}
+              endContent={
+                <RunContextShortcut
+                  index={(onAutoEnvironment ? 1 : 0) + availableEnvironments.length}
+                />
+              }
+            >
               <span className={ADD_TO_MACHINE_LABEL_CLASS}>
                 <PlusIcon aria-hidden="true" className="size-3" />
-                Add to another machine
+                <span className="truncate">Add to another machine</span>
               </span>
             </SelectItem>
           ) : null}

@@ -1,7 +1,7 @@
 import { ComposerSelectControl } from "./chat/ComposerControl";
 import { ComposerContextLabel } from "./ComposerContextLabel";
 import { FolderGit2Icon, FolderGitIcon, FolderIcon } from "lucide-react";
-import { memo, type MouseEvent as ReactMouseEvent } from "react";
+import { memo, type MouseEvent as ReactMouseEvent, useRef, useState } from "react";
 
 import {
   resolveCurrentWorkspaceLabel,
@@ -11,6 +11,7 @@ import {
 } from "./BranchToolbar.logic";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import { PreviousWorktreeItemContent } from "./PreviousWorktreeItemContent";
+import { RunContextShortcut, useRunContextDigitShortcuts } from "./runContextMenuShortcuts";
 import {
   Select,
   SelectGroup,
@@ -27,6 +28,8 @@ import { primaryServerKeybindingsAtom } from "../state/server";
 const PREVIOUS_WORKTREE_SELECT_VALUE = "previous-worktree";
 
 interface BranchToolbarEnvModeSelectorProps {
+  /** Rows are numbered after the machine rows above them in the same popup. */
+  firstShortcutIndex?: number;
   forceNewWorktree?: boolean;
   envLocked: boolean;
   effectiveEnvMode: EnvMode;
@@ -38,6 +41,7 @@ interface BranchToolbarEnvModeSelectorProps {
 }
 
 export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSelector({
+  firstShortcutIndex = 0,
   forceNewWorktree = false,
   envLocked,
   effectiveEnvMode,
@@ -48,6 +52,9 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
   onUsePreviousWorktree,
 }: BranchToolbarEnvModeSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
+  const [open, setOpen] = useState(false);
+  const popupRef = useRef<HTMLDivElement>(null);
+  useRunContextDigitShortcuts({ open, popupRef });
   const shortcutLabel = shortcutLabelForCommand(
     useAtomValue(primaryServerKeybindingsAtom),
     "composer.workspace",
@@ -106,6 +113,8 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
   return (
     <Select
       modal={false}
+      open={open}
+      onOpenChange={setOpen}
       value={effectiveEnvMode}
       onValueChange={(value: string | null) => {
         if (value === PREVIOUS_WORKTREE_SELECT_VALUE) {
@@ -148,13 +157,14 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
         </TooltipPopup>
       </Tooltip>
       <SelectPopup
+        ref={popupRef}
         alignItemWithTrigger={false}
         {...composerFloatingLayerProps}
         className={showPreviousWorktree ? "w-[min(21rem,calc(100vw-2rem))]" : undefined}
       >
         <SelectGroup>
           <SelectGroupLabel>Workspace</SelectGroupLabel>
-          <SelectItem value="local">
+          <SelectItem value="local" endContent={<RunContextShortcut index={firstShortcutIndex} />}>
             <span className="inline-flex items-center gap-1.5">
               {activeWorktreePath ? (
                 <FolderGitIcon className="size-3" />
@@ -164,14 +174,20 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
               {resolveCurrentWorkspaceLabel(activeWorktreePath)}
             </span>
           </SelectItem>
-          <SelectItem value="worktree">
+          <SelectItem
+            value="worktree"
+            endContent={<RunContextShortcut index={firstShortcutIndex + 1} />}
+          >
             <span className="inline-flex items-center gap-1.5">
               <FolderGit2Icon className="size-3" />
               {resolveEnvModeLabel("worktree")}
             </span>
           </SelectItem>
           {showPreviousWorktree && previousWorktreeLabel ? (
-            <SelectItem value={PREVIOUS_WORKTREE_SELECT_VALUE}>
+            <SelectItem
+              value={PREVIOUS_WORKTREE_SELECT_VALUE}
+              endContent={<RunContextShortcut index={firstShortcutIndex + 2} />}
+            >
               <PreviousWorktreeItemContent branch={previousWorktreeBranch} />
             </SelectItem>
           ) : null}

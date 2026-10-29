@@ -163,12 +163,15 @@ function SelectPopup({
   );
 }
 
+/** A trailing shortcut rides the row's flex: the label truncates, the hint keeps its size. */
 function SelectItem({
   className,
   children,
+  endContent,
   hideIndicator: _hideIndicator = false,
   ...props
 }: SelectPrimitive.Item.Props & {
+  endContent?: React.ReactNode;
   hideIndicator?: boolean;
 }) {
   return (
@@ -180,11 +183,16 @@ function SelectItem({
       data-slot="select-item"
       {...props}
     >
+      {/* Base UI reads ItemText from the first child for the trigger label, so a row with
+          `endContent` puts both in that one flex child. */}
       <SelectPrimitive.ItemText
-        className="min-w-0 flex-1 [&_svg:not([class*='text-'])]:text-muted-foreground"
+        className={cn(
+          "min-w-0 flex flex-1 items-center gap-2 [&_svg:not([class*='text-'])]:text-muted-foreground",
+        )}
         data-slot="select-item-text"
       >
-        {children}
+        <span className="min-w-0 flex-1">{children}</span>
+        {endContent}
       </SelectPrimitive.ItemText>
     </SelectPrimitive.Item>
   );
