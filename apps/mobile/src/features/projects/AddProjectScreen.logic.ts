@@ -4,7 +4,23 @@ import {
   getBrowseLeafPathSegment,
   getBrowseParentPath,
 } from "@t3tools/client-runtime/state/projects";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { type EnvironmentId, FilesystemBrowseError } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
+
+const isFilesystemBrowseError = Schema.is(FilesystemBrowseError);
+
+/** Clone destinations may name folders that do not exist yet; cloning creates them. */
+export function isMissingCloneParentBrowseFailure(input: {
+  readonly cloning: boolean;
+  readonly failure: unknown;
+}): boolean {
+  return (
+    input.cloning &&
+    isFilesystemBrowseError(input.failure) &&
+    input.failure.failure === "read_directory_failed" &&
+    input.failure.pathMissing === true
+  );
+}
 
 export function resolveAddProjectEnvironment<
   T extends {
@@ -29,15 +45,6 @@ export function resolveAddProjectEnvironment<
   );
 }
 
-/**
- * Where the re-link picker starts, and what it keeps proposing as the user
- * browses.
- *
- * A moved folder is usually the same folder under a new parent, so opening on
- * the current path and pinning its leaf name means browsing up to where the
- * project landed proposes the expected directory instead of a blank one. The
- * seed is the parent because the pinned name is appended to it.
- */
 export function resolveProjectFolderReLinkSeed(currentPath: string): {
   readonly initialDirectoryPath: string;
   readonly pinnedDirectoryName: string;
