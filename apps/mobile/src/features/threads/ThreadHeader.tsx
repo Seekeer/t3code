@@ -21,6 +21,7 @@ export function ThreadHeader(props: {
   readonly inspectorMode: ThreadInspectorMode | null;
   readonly onToggleInspector: () => void;
   readonly onOpenFilesInspector: () => void;
+  readonly note?: { readonly hasNote: boolean; readonly onOpen: () => void };
 }) {
   const goBack = useWorkspaceBackNavigation("threads");
   const { panes, toggleAuxiliaryPane, composerKeyboardActive, startNewTask } =
@@ -29,7 +30,18 @@ export function ThreadHeader(props: {
   const terminalMenu = threadTerminalMenu(props.gitControls);
   const filesVisible = props.inspectorMode === "files" && panes.auxiliaryPaneVisible;
   const inspectorVisible = props.inspectorMode !== null && panes.auxiliaryPaneVisible;
-  const actions: AppBarAction[] = props.hasThreadCwd
+  const noteAction: AppBarAction[] = props.note
+    ? [
+        {
+          accessibilityLabel: props.note.hasNote ? "Thread note (has note)" : "Thread note",
+          icon: "note.text",
+          selected: props.note.hasNote,
+          separateBackground: false,
+          onPress: props.note.onOpen,
+        },
+      ]
+    : [];
+  const fileActions: AppBarAction[] = props.hasThreadCwd
     ? [
         {
           accessibilityLabel: filesVisible ? "Close files" : "Open files",
@@ -41,6 +53,7 @@ export function ThreadHeader(props: {
         },
       ]
     : [];
+  const actions = [...noteAction, ...fileActions];
   const menus = [gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null);
 
   return (
