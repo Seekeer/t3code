@@ -1,4 +1,8 @@
-import type { EnvironmentId, PullRequestLinkedThreadsResult } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  PullRequestLinkedThreadsResult,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
 
 import { dispatchCommandPalette, isCommandPaletteMounted } from "./commandPaletteStore";
 
@@ -30,6 +34,12 @@ export function openCommandPalette(detail: CommandPaletteOpenDetail = {}): void 
   } else {
     dispatchCommandPalette({ _tag: "SetOpen", open: true });
   }
+}
+
+/** Opens straight on "Tag thread…" for a thread that need not be the open one. */
+export function openTagThreadPalette(threadRef: ScopedThreadRef): void {
+  if (!isCommandPaletteMounted()) return;
+  dispatchCommandPalette({ _tag: "OpenTagThread", threadRef });
 }
 
 /** True while the palette popup is on screen, including its closing animation. */

@@ -1492,10 +1492,26 @@ describe("resolveSidebarRouteReveal", () => {
         routeKey: hiddenKey,
         isSearching: false,
         scopedProjectKeys,
+        scopedTags: null,
         delegatedUnderParent: new Set(),
         findThread,
       }),
-    ).toEqual({ pendingKey: hiddenKey, widensScope: true });
+    ).toEqual({ pendingKey: hiddenKey, widensScope: true, widensTags: false });
+  });
+
+  it("clears only the tag filter when tags alone hide the opened thread", () => {
+    const untagged = makeThreadFixture({ projectId: ProjectId.make("project-scoped") });
+    expect(
+      resolveSidebarRouteReveal({
+        reveal: { observedKey: "environment-test:other", pendingKey: null },
+        routeKey: hiddenKey,
+        isSearching: false,
+        scopedProjectKeys,
+        scopedTags: new Set(["release"]),
+        delegatedUnderParent: new Set(),
+        findThread: (key) => (key === hiddenKey ? untagged : undefined),
+      }),
+    ).toEqual({ pendingKey: hiddenKey, widensScope: false, widensTags: true });
   });
 
   it("never widens for a thread whose reveal already completed", () => {
@@ -1506,10 +1522,11 @@ describe("resolveSidebarRouteReveal", () => {
         routeKey: hiddenKey,
         isSearching: false,
         scopedProjectKeys,
+        scopedTags: null,
         delegatedUnderParent: new Set(),
         findThread,
       }),
-    ).toEqual({ pendingKey: null, widensScope: false });
+    ).toEqual({ pendingKey: null, widensScope: false, widensTags: false });
   });
 
   it("widens again for a thread reopened before the thread between them listed its row", () => {
@@ -1522,11 +1539,16 @@ describe("resolveSidebarRouteReveal", () => {
         routeKey,
         isSearching: false,
         scopedProjectKeys,
+        scopedTags: null,
         delegatedUnderParent: new Set(),
         findThread,
       });
     resolve("environment-test:unlisted");
-    expect(resolve(hiddenKey)).toEqual({ pendingKey: hiddenKey, widensScope: true });
+    expect(resolve(hiddenKey)).toEqual({
+      pendingKey: hiddenKey,
+      widensScope: true,
+      widensTags: false,
+    });
   });
 
   it("holds a pending reveal without widening while searching", () => {
@@ -1536,10 +1558,11 @@ describe("resolveSidebarRouteReveal", () => {
         routeKey: hiddenKey,
         isSearching: true,
         scopedProjectKeys,
+        scopedTags: null,
         delegatedUnderParent: new Set(),
         findThread,
       }),
-    ).toEqual({ pendingKey: hiddenKey, widensScope: false });
+    ).toEqual({ pendingKey: hiddenKey, widensScope: false, widensTags: false });
   });
 });
 

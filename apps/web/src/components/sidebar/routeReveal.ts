@@ -49,24 +49,40 @@ type RevealableThread = Parameters<typeof filterSidebarV2VisibleThreads>[0][numb
 
 // Render records the route before deciding, so the first render of a new route
 // already widens the scope. Only a route reveal widens: the once-per-mount
-// scroll never changes a scope the user chose.
+// scroll never changes a scope the user chose. Each filter widens only when it
+// alone hides the thread, so a tag filter never clears the project scope.
 export function resolveSidebarRouteReveal<T extends RevealableThread>(input: {
   readonly reveal: SidebarRouteReveal;
   readonly routeKey: string | null;
   readonly isSearching: boolean;
   readonly scopedProjectKeys: ReadonlySet<string> | null;
+  readonly scopedTags: ReadonlySet<string> | null;
   readonly delegatedUnderParent: ReadonlySet<string>;
   readonly findThread: (key: string) => T | undefined;
-}): { readonly pendingKey: string | null; readonly widensScope: boolean } {
-  const { reveal, routeKey, isSearching, scopedProjectKeys, delegatedUnderParent, findThread } =
-    input;
+}): {
+  readonly pendingKey: string | null;
+  readonly widensScope: boolean;
+  readonly widensTags: boolean;
+} {
+  const {
+    reveal,
+    routeKey,
+    isSearching,
+    scopedProjectKeys,
+    scopedTags,
+    delegatedUnderParent,
+    findThread,
+  } = input;
   const pendingKey = pendingSidebarRouteReveal(reveal, routeKey);
   // Search results replace the thread list; the reveal waits for it to return.
   const thread = pendingKey === null || isSearching ? undefined : findThread(pendingKey);
-  const widensScope =
+  const listed = (projectKeys: ReadonlySet<string> | null, tags: ReadonlySet<string> | null) =>
     thread !== undefined &&
-    scopedProjectKeys !== null &&
-    filterSidebarV2VisibleThreads([thread], scopedProjectKeys, delegatedUnderParent).length === 0 &&
-    filterSidebarV2VisibleThreads([thread], null, delegatedUnderParent).length === 1;
-  return { pendingKey, widensScope };
+    filterSidebarV2VisibleThreads([thread], projectKeys, delegatedUnderParent, tags).length === 1;
+  const listable = listed(null, null);
+  return {
+    pendingKey,
+    widensScope: listable && scopedProjectKeys !== null && !listed(scopedProjectKeys, null),
+    widensTags: listable && scopedTags !== null && !listed(null, scopedTags),
+  };
 }

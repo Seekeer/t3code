@@ -26,6 +26,7 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
+import type { ThreadTagCount } from "@t3tools/client-runtime/state/thread-tags";
 import { Atom } from "effect/reactivity";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentProjects } from "./projects";
@@ -163,6 +164,11 @@ export function useQuietThreadShell(ref: ScopedThreadRef | null): EnvironmentThr
 /** Every thread shell, held through streaming ticks; see quietThreadShellAtom. */
 export function useQuietThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
   return useAtomValue(environmentThreadShells.quietThreadShellsAtom);
+}
+
+/** Tags on visible unarchived threads, most used first; see allThreadTagsAtom. */
+export function useAllThreadTags(): ReadonlyArray<ThreadTagCount> {
+  return useAtomValue(environmentThreadShells.allThreadTagsAtom);
 }
 
 export function useChildThreadInputs(ref: ScopedThreadRef | null) {

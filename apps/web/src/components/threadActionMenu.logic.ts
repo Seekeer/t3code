@@ -20,6 +20,9 @@ export type ThreadActionMenuId =
   | "rename"
   | "regenerate-title"
   | "mark-unread"
+  | "tags"
+  | `tag:${string}`
+  | "new-tag"
   | "share-guest"
   | "copy"
   | "copy-path"
@@ -95,6 +98,11 @@ export interface ThreadActionMenuState {
   readonly canShareWithGuest?: boolean;
   /** A No project thread with its own folder, on a server that can promote it. */
   readonly canTurnIntoProject?: boolean;
+  /** Every tag in use, most used first, and the ones this thread carries. */
+  readonly tags?: {
+    readonly all: ReadonlyArray<string>;
+    readonly applied: ReadonlyArray<string>;
+  };
 }
 
 /** Local navigation, read markers, and copying remain available to read-only clients. */
@@ -178,6 +186,27 @@ export function buildThreadActionMenuItems(
         ]
       : []),
     { id: "mark-unread", label: "Mark unread", icon: "mail-open" },
+    ...(state.tags
+      ? [
+          {
+            id: "tags" as const,
+            label: "Tags",
+            icon: "tag",
+            children: [
+              ...state.tags.all.map((tag) => ({
+                id: `tag:${tag}` as const,
+                label: tag,
+                checked: state.tags!.applied.includes(tag),
+              })),
+              {
+                id: "new-tag" as const,
+                label: "New tag…",
+                separatorBefore: state.tags.all.length > 0,
+              },
+            ],
+          },
+        ]
+      : []),
     ...(state.canShareWithGuest
       ? [{ id: "share-guest" as const, label: "Share with guest", icon: "user-plus" }]
       : []),

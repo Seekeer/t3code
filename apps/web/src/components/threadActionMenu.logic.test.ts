@@ -74,4 +74,19 @@ describe("buildThreadActionMenuItems", () => {
     expect(items.find((item) => item.id === "archive")?.disabled).toBe(true);
     expect(items.find((item) => item.id === "turn-into-project")?.disabled).toBe(true);
   });
+
+  it.each([
+    {
+      all: ["bug", "release"],
+      expected: [
+        { id: "tag:bug", label: "bug", checked: true },
+        { id: "tag:release", label: "release", checked: false },
+        { id: "new-tag", label: "New tag…", separatorBefore: true },
+      ],
+    },
+    { all: [], expected: [{ id: "new-tag", label: "New tag…", separatorBefore: false }] },
+  ])("lists tags $all with this thread's checked, then New tag…", ({ all, expected }) => {
+    const items = buildThreadActionMenuItems({ ...baseState, tags: { all, applied: ["bug"] } });
+    expect(items.find((item) => item.id === "tags")?.children).toEqual(expected);
+  });
 });

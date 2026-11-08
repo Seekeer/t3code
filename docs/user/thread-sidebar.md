@@ -219,6 +219,18 @@ On web and desktop, right-click a pull request link in a thread and choose
 same link to return to the branch PR, if one exists.
 The linked pull request participates in automatic settlement.
 
+## Tag threads
+
+On web and desktop, right-click a thread and open **Tags** to add or remove a tag, or
+choose **Tag thread…** in the command palette for the open thread. Type a name that
+no thread uses yet and press `Enter` to create it. Tags match exactly, so `Bug` and
+`bug` are different tags.
+
+Once any thread has a tag, the tag button next to the project filter narrows the
+sidebar to threads with a tag. Shift+click picks several tags and lists threads that
+have any of them; together with the project filter, a thread must match both. Opening
+a thread the tag filter hides clears it.
+
 ## Find and reference work
 
 On web and desktop, open the command palette with `Cmd/Ctrl+K` to search threads
