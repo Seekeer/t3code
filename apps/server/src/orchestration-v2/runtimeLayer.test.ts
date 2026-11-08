@@ -2649,8 +2649,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const noteEventTypes: Array<string> = [];
       for (const [step, note, expected] of [
         ["set", "Remember the flaky login test", "Remember the flaky login test"],
-        ["clear", "  
- ", undefined],
+        ["clear", "  \n ", undefined],
       ] as const) {
         const result = yield* orchestrator.dispatch({
           type: "thread.note.set",
@@ -2659,7 +2658,11 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           note,
         });
         noteEventTypes.push(...result.storedEvents.map((stored) => stored.event.type));
-        assert.equal((yield* orchestrator.getThreadProjection(threadId)).thread.note, expected, step);
+        assert.equal(
+          (yield* orchestrator.getThreadProjection(threadId)).thread.note,
+          expected,
+          step,
+        );
         const shell = shellOf(yield* orchestrator.getShellSnapshot());
         // The note travels only with the full thread, and is not activity.
         assert.notProperty(shell, "note", step);

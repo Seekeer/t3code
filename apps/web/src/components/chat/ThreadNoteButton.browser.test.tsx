@@ -1,6 +1,6 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 const persisted = vi.hoisted(() => ({ note: undefined as string | undefined, saves: 0 }));
 vi.mock(import("~/state/entities"), async (importOriginal) => ({
@@ -19,21 +19,23 @@ vi.mock(import("~/state/use-orchestration-command"), async (importOriginal) => (
     }) as never,
 }));
 
-import { render } from "../../../test/render";
-import { ThreadNoteButton } from "./ThreadNoteButton";
+import { AppAtomRegistryProvider } from "~/rpc/atomRegistry";
+import { act, render } from "../../../test/render";
+import { openThreadNote, ThreadNoteButton } from "./ThreadNoteButton";
+
+const threadRef = {
+  environmentId: EnvironmentId.make("environment"),
+  threadId: ThreadId.make("thread"),
+};
 
 function noteButton() {
   return (
-    <>
-      <ThreadNoteButton
-        threadRef={{
-          environmentId: EnvironmentId.make("environment"),
-          threadId: ThreadId.make("thread"),
-        }}
-        canEdit
-      />
-      <div tabIndex={0}>Outside note</div>
-    </>
+    <AppAtomRegistryProvider>
+      <ThreadNoteButton threadRef={threadRef} canEdit />
+      <div tabIndex={0} style={{ marginTop: 600 }}>
+        Outside note
+      </div>
+    </AppAtomRegistryProvider>
   );
 }
 
@@ -43,14 +45,14 @@ it("keeps a note saved on click-away and drops an edit cancelled with Escape", a
   await using screen = await render(noteButton());
 
   await screen.getByRole("button", { name: "Thread note" }).click();
-  await screen.getByRole("textbox", { name: "Thread note" }).fill("Check the login redirect");
+  await page.getByRole("textbox", { name: "Thread note" }).fill("Check the login redirect");
   await screen.getByText("Outside note").click();
-  await expect.element(screen.getByRole("textbox", { name: "Thread note" })).not.toBeInTheDocument();
+  await expect.element(page.getByRole("textbox", { name: "Thread note" })).not.toBeInTheDocument();
   expect(persisted.note).toBe("Check the login redirect");
 
   await screen.rerender(noteButton());
   await screen.getByRole("button", { name: "Thread note (has note)" }).click();
-  const textarea = screen.getByRole("textbox", { name: "Thread note" });
+  const textarea = page.getByRole("textbox", { name: "Thread note" });
   await expect.element(textarea).toHaveValue("Check the login redirect");
 
   await textarea.fill("Discard me");
@@ -59,8 +61,9 @@ it("keeps a note saved on click-away and drops an edit cancelled with Escape", a
   expect(persisted.note).toBe("Check the login redirect");
   expect(persisted.saves).toBe(1);
 
-  await screen.getByRole("button", { name: "Thread note (has note)" }).click();
+  // The command palette opens the popover without going through the trigger.
+  await act(() => openThreadNote(threadRef));
   await expect
-    .element(screen.getByRole("textbox", { name: "Thread note" }))
+    .element(page.getByRole("textbox", { name: "Thread note" }))
     .toHaveValue("Check the login redirect");
 });

@@ -54,7 +54,9 @@ export function ThreadNoteButton({
   const setThreadNote = useOrchestrationCommand(threadEnvironment.setNote, {
     reportFailure: false,
   });
-  const [draft, setDraft] = useState(note);
+  // Null means untouched, so a popover opened from the command palette shows the current note.
+  const [draft, setDraft] = useState<string | null>(null);
+  const text = draft ?? note;
   // Blur and close can both fire for one edit; the ref keeps that to a single command.
   const submittedRef = useRef<string | null | undefined>(undefined);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -91,11 +93,11 @@ export function ThreadNoteButton({
       onOpenChange={(nextOpen, eventDetails) => {
         if (nextOpen) {
           submittedRef.current = undefined;
-          setDraft(note);
           openThreadNote(threadRef);
           return;
         }
-        if (eventDetails.reason !== "escape-key") save(draft);
+        if (eventDetails.reason !== "escape-key") save(text);
+        setDraft(null);
         closeThreadNote();
       }}
     >
@@ -153,7 +155,7 @@ export function ThreadNoteButton({
               ref={textareaRef}
               maxLength={THREAD_NOTE_MAX_LENGTH}
               readOnly={!canEdit}
-              value={draft}
+              value={text}
               onChange={(event) => setDraft(event.currentTarget.value)}
               onBlur={(event) => {
                 // Closing the popover saves; this covers leaving the window with it open.
@@ -162,9 +164,9 @@ export function ThreadNoteButton({
             />
             <div className="flex items-center justify-between gap-2 text-muted-foreground text-xs">
               <span>{canEdit ? "Saves when you click away · Esc to cancel" : "Read only"}</span>
-              {draft.length > COUNTER_THRESHOLD ? (
+              {text.length > COUNTER_THRESHOLD ? (
                 <span className="tabular-nums">
-                  {draft.length.toLocaleString()} / {THREAD_NOTE_MAX_LENGTH.toLocaleString()}
+                  {text.length.toLocaleString()} / {THREAD_NOTE_MAX_LENGTH.toLocaleString()}
                 </span>
               ) : null}
             </div>
