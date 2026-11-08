@@ -26,6 +26,7 @@ import {
   sortPinnedThreadsForSidebar,
   sortScopedProjectsForSidebar,
   sortSidebarV2ProjectGroups,
+  filterSidebarV2VisibleThreads,
   shouldNavigateAfterThreadPark,
   type SidebarListItem,
   type SidebarListMarker,
@@ -736,6 +737,35 @@ describe("sortScopedProjectsForSidebar", () => {
       "Visible project",
       "Archived-only project",
     ]);
+  });
+});
+
+describe("filterSidebarV2VisibleThreads", () => {
+  const tagged = (id: string, projectId: string, tags: string[]) => {
+    const thread = makeThreadFixture({
+      id: ThreadId.make(id),
+      projectId: ProjectId.make(projectId),
+    });
+    return { ...thread, source: { ...thread.source, tags } };
+  };
+  const threads = [
+    tagged("ui-bug", "web", ["ui", "bug"]),
+    tagged("backend", "web", ["backend"]),
+    tagged("other-ui", "api", ["ui"]),
+    tagged("untagged", "web", []),
+  ];
+  const ids = (projects: string[] | null, tags: string[] | null) =>
+    filterSidebarV2VisibleThreads(
+      threads,
+      projects === null ? null : new Set(projects.map((project) => `environment-test:${project}`)),
+      new Set(),
+      tags === null ? null : new Set(tags),
+    ).map((thread) => thread.id);
+
+  it("shows threads carrying any chosen tag, within the project scope", () => {
+    expect(ids(null, null)).toEqual(["ui-bug", "backend", "other-ui", "untagged"]);
+    expect(ids(null, ["bug", "backend"])).toEqual(["ui-bug", "backend"]);
+    expect(ids(["web"], ["ui"])).toEqual(["ui-bug"]);
   });
 });
 
@@ -1462,10 +1492,26 @@ describe("resolveSidebarRouteReveal", () => {
         routeKey: hiddenKey,
         isSearching: false,
         scopedProjectKeys,
+        scopedTags: null,
         delegatedUnderParent: new Set(),
         findThread,
       }),
-    ).toEqual({ pendingKey: hiddenKey, widensScope: true });
+    ).toEqual({ pendingKey: hiddenKey, widensScope: true, widensTags: false });
+  });
+
+  it("clears only the tag filter when tags alone hide the opened thread", () => {
+    const untagged = makeThreadFixture({ projectId: ProjectId.make("project-scoped") });
+    expect(
+      resolveSidebarRouteReveal({
+        reveal: { observedKey: "environment-test:other", pendingKey: null },
+        routeKey: hiddenKey,
+        isSearching: false,
+        scopedProjectKeys,
+        scopedTags: new Set(["release"]),
+        delegatedUnderParent: new Set(),
+        findThread: (key) => (key === hiddenKey ? untagged : undefined),
+      }),
+    ).toEqual({ pendingKey: hiddenKey, widensScope: false, widensTags: true });
   });
 
   it("never widens for a thread whose reveal already completed", () => {
@@ -1476,10 +1522,11 @@ describe("resolveSidebarRouteReveal", () => {
         routeKey: hiddenKey,
         isSearching: false,
         scopedProjectKeys,
+        scopedTags: null,
         delegatedUnderParent: new Set(),
         findThread,
       }),
-    ).toEqual({ pendingKey: null, widensScope: false });
+    ).toEqual({ pendingKey: null, widensScope: false, widensTags: false });
   });
 
   it("widens again for a thread reopened before the thread between them listed its row", () => {
@@ -1492,11 +1539,16 @@ describe("resolveSidebarRouteReveal", () => {
         routeKey,
         isSearching: false,
         scopedProjectKeys,
+        scopedTags: null,
         delegatedUnderParent: new Set(),
         findThread,
       });
     resolve("environment-test:unlisted");
-    expect(resolve(hiddenKey)).toEqual({ pendingKey: hiddenKey, widensScope: true });
+    expect(resolve(hiddenKey)).toEqual({
+      pendingKey: hiddenKey,
+      widensScope: true,
+      widensTags: false,
+    });
   });
 
   it("holds a pending reveal without widening while searching", () => {
@@ -1506,10 +1558,11 @@ describe("resolveSidebarRouteReveal", () => {
         routeKey: hiddenKey,
         isSearching: true,
         scopedProjectKeys,
+        scopedTags: null,
         delegatedUnderParent: new Set(),
         findThread,
       }),
-    ).toEqual({ pendingKey: hiddenKey, widensScope: false });
+    ).toEqual({ pendingKey: hiddenKey, widensScope: false, widensTags: false });
   });
 });
 

@@ -17,6 +17,7 @@ import { Atom } from "effect/reactivity";
 import type { EnvironmentThreadShell, PendingSubagentRequest } from "./models.ts";
 import { presentThreadShell, threadRuntimeIsActive } from "./models.ts";
 import { hiddenThreadKeys, NO_HIDDEN_THREADS } from "./threadTagFilter.ts";
+import { collectThreadTags, threadTagCountsEqual } from "./threadTags.ts";
 import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
 import {
   arrayElementsEqual,
@@ -663,6 +664,15 @@ export function createEnvironmentThreadShellAtoms(input: {
     return next;
   }).pipe(Atom.withLabel("environment-quiet-thread-shell-list"));
 
+  /** Tags on unarchived threads the hide filter leaves visible, most used first. */
+  const allThreadTagsAtom = Atom.make((get) =>
+    collectThreadTags(
+      get(quietThreadShellsAtom)
+        .filter((thread) => thread.archivedAt === null)
+        .map((thread) => thread.source),
+    ),
+  ).pipe(Atom.withEquality(threadTagCountsEqual), Atom.withLabel("environment-all-thread-tags"));
+
   let previousDelegatedUnderParent: ReadonlySet<string> = new Set();
   const delegatedUnderParentAtom = Atom.make((get) => {
     const environmentIds = new Set(enabledEnvironmentIds(get(input.catalogValueAtom)));
@@ -725,6 +735,7 @@ export function createEnvironmentThreadShellAtoms(input: {
     hiddenThreadKeysAtom,
     anyEnvironmentHidingAtom,
     quietThreadShellsAtom,
+    allThreadTagsAtom,
     navigationThreadShellsAtom,
     delegatedUnderParentAtom,
     pendingSubagentRequestsAtom,

@@ -41,6 +41,7 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { parseThreadTag } from "@t3tools/client-runtime/state/thread-tags";
 import {
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
@@ -48,6 +49,7 @@ import {
   type DesktopWslState,
   type EnvironmentId,
   type FilesystemBrowseResult,
+  type ScopedThreadRef,
   SourceControlProviderKind,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
@@ -73,8 +75,10 @@ import {
   MonitorIcon,
   PinIcon,
   PinOffIcon,
+  PlusIcon,
   SquarePenIcon,
   StickyNoteIcon,
+  TagIcon,
   TextSearchIcon,
   UserPlusIcon,
 } from "lucide-react";
@@ -132,8 +136,10 @@ import {
   usePrimaryEnvironmentId,
 } from "../state/environments";
 import {
+  useAllThreadTags,
   useAnyEnvironmentHiding,
   useHiddenThreadKeys,
+  useQuietThreadShell,
   useEnvironmentThreadRefs,
   useProjects,
   useServerConfigs,
@@ -211,7 +217,6 @@ import {
   type AddProjectEnvironmentOption,
   buildPaletteRemoteSourceReadiness,
   errorMessage,
-  getEnvironmentBrowsePlatform,
   remoteProjectInputPlaceholder,
   reduceCommandPaletteSearchState,
   type SearchOverlayMode,
@@ -271,6 +276,7 @@ import { threadRecentUse } from "@t3tools/shared/paletteSearch";
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 const ADD_PROJECT_ENTRY_GROUP = "add-project";
 const NEW_THREAD_IN_GROUP = "projects";
+const TAG_THREAD_GROUP = "thread-tags";
 
 /** The submenu an open intent starts in; its groups resolve while rendering. */
 function openIntentView(intent: CommandPaletteOpenIntent | null): CommandPaletteView | null {
@@ -290,6 +296,8 @@ function openIntentView(intent: CommandPaletteOpenIntent | null): CommandPalette
         addonIcon: <PaletteIcon className={ADDON_ICON_CLASS} />,
         groups: [{ value: "themes", label: "Change theme", items: [] }],
       };
+    case "tag-thread":
+      return TAG_THREAD_VIEW;
     case "search":
     case undefined:
       return null;
@@ -297,6 +305,11 @@ function openIntentView(intent: CommandPaletteOpenIntent | null): CommandPalette
 }
 
 const NEW_THREAD_NO_PROJECT_VALUE = "new-thread-in:no-project";
+// Its rows resolve while rendering, so checkmarks follow the thread's tags.
+const TAG_THREAD_VIEW: CommandPaletteView = {
+  addonIcon: <TagIcon className={ADDON_ICON_CLASS} />,
+  groups: [{ value: TAG_THREAD_GROUP, label: "Tags", items: [] }],
+};
 
 export function CommandPalette({ children }: { children: ReactNode }) {
   useCommandPaletteMount();
@@ -471,6 +484,17 @@ function OpenCommandPaletteDialog(props: {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
   const paletteRouteTarget = useThreadRouteTarget();
+  // "New tag…" in a sidebar row's menu tags that row, which need not be the open thread.
+  const [tagTargetRef, setTagTargetRef] = useState<ScopedThreadRef | null>(() =>
+    props.openIntent?.kind === "tag-thread" ? props.openIntent.threadRef : null,
+  );
+  const tagTargetThread = useQuietThreadShell(tagTargetRef);
+  const allThreadTags = useAllThreadTags();
+  const canTagTarget = useEnvironmentScope(
+    tagTargetRef?.environmentId ?? null,
+    AuthOrchestrationOperateScope,
+  );
+  const setThreadTag = useOrchestrationCommand(threadEnvironment.setTag, "thread tag");
   const projects = useProjects();
   const referenceThreadRef =
     pathname === "/pull-requests"
@@ -1446,6 +1470,18 @@ function OpenCommandPaletteDialog(props: {
     const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
     actionItems.push({
       kind: "action",
+      value: "action:tag-thread",
+      searchTerms: ["tag", "tags", "label", "group", "thread"],
+      title: "Tag thread…",
+      icon: <TagIcon className={ITEM_ICON_CLASS} />,
+      keepOpen: true,
+      run: async () => {
+        setTagTargetRef(threadRef);
+        pushPaletteView(TAG_THREAD_VIEW);
+      },
+    });
+    actionItems.push({
+      kind: "action",
       value: "action:edit-thread-note",
       searchTerms: ["note", "memo", "thread note", "remember"],
       title: "Edit thread note",
@@ -1707,6 +1743,63 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
+  const tagThreadGroups = (): ReadonlyArray<CommandPaletteGroup> => {
+    if (tagTargetRef === null) return [];
+    const { environmentId, threadId } = tagTargetRef;
+    const applied = tagTargetThread?.source.tags ?? [];
+    // Tags on a hidden thread are missing from the shared list but still belong here.
+    const tags = [...new Set([...allThreadTags.map((entry) => entry.tag), ...applied])];
+    const setTag = (tag: string, tagged: boolean) =>
+      void setThreadTag({ environmentId, input: { threadId, tag, tagged } });
+    const items: CommandPaletteActionItem[] = tags.map((tag) => {
+      const tagged = applied.includes(tag);
+      return {
+        kind: "action",
+        value: `tag-thread:tag:${tag}`,
+        searchTerms: [tag],
+        title: tag,
+        icon: <TagIcon className={ITEM_ICON_CLASS} />,
+        ...(tagged
+          ? {
+              titleTrailingContent: (
+                <CheckIcon
+                  aria-label="Tagged"
+                  className="ms-auto size-4 shrink-0 text-muted-foreground/70"
+                />
+              ),
+            }
+          : {}),
+        disabled: !canTagTarget,
+        keepOpen: true,
+        run: async () => setTag(tag, !tagged),
+      };
+    });
+    const typedTag = parseThreadTag(deferredQuery);
+    if (typedTag !== null && !tags.includes(typedTag)) {
+      items.push({
+        kind: "action",
+        value: "tag-thread:create",
+        searchTerms: [typedTag],
+        title: (
+          <>
+            Create tag <span className="font-semibold">“{typedTag}”</span>
+          </>
+        ),
+        searchTitle: typedTag,
+        icon: <PlusIcon className={ITEM_ICON_CLASS} />,
+        // Below the tags the query matches, so Enter picks an existing tag first.
+        secondary: true,
+        disabled: !canTagTarget,
+        keepOpen: true,
+        run: async () => {
+          setQuery("");
+          setTag(typedTag, true);
+        },
+      });
+    }
+    return [{ value: TAG_THREAD_GROUP, label: "Tags", items }];
+  };
+
   const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
   // Every setting goes to the palette's own matcher, so settings get the same
   // word starts and typo tolerance as threads.
@@ -1750,11 +1843,13 @@ function OpenCommandPaletteDialog(props: {
                 items: projectThreadItems.length > 0 ? projectThreadItems : [addProjectAction],
               },
             ]
-          : currentView?.groups[0]?.value === "themes"
-            ? changeThemeItem.groups
-            : currentView?.groups[0]?.value === "appearance"
-              ? changeAppearanceItem.groups
-              : (currentView?.groups ?? rootGroups);
+          : currentView?.groups[0]?.value === TAG_THREAD_GROUP
+            ? tagThreadGroups()
+            : currentView?.groups[0]?.value === "themes"
+              ? changeThemeItem.groups
+              : currentView?.groups[0]?.value === "appearance"
+                ? changeAppearanceItem.groups
+                : (currentView?.groups ?? rootGroups);
 
   const isLinkedThreadSearch =
     linkedThreadSearch?.linkedThreads !== undefined && deferredQuery === linkedThreadSearch.query;
