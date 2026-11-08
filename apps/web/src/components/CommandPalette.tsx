@@ -77,6 +77,7 @@ import {
   PinOffIcon,
   PlusIcon,
   SquarePenIcon,
+  StickyNoteIcon,
   TagIcon,
   TextSearchIcon,
   UserPlusIcon,
@@ -253,6 +254,7 @@ import { ProjectFilePicker } from "./files/ProjectFilePicker";
 import { openLinkPullRequestDialog } from "./pullRequest/LinkPullRequestDialog";
 import { canShareWithGuestAtom } from "./chat/guestShareAvailability";
 import { openGuestShareDialog } from "./chat/guestShareDialogState";
+import { openThreadNote } from "./chat/ThreadNoteButton";
 import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog";
 import { settingsForThisPlatform, SETTINGS_SECTION_LABELS } from "./settings/settingsSearch";
 import { primaryServerKeybindingsAtom } from "../state/server";
@@ -1476,6 +1478,17 @@ function OpenCommandPaletteDialog(props: {
       run: async () => {
         setTagTargetRef(threadRef);
         pushPaletteView(TAG_THREAD_VIEW);
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:edit-thread-note",
+      searchTerms: ["note", "memo", "thread note", "remember"],
+      title: "Edit thread note",
+      description: "Add a private note to this thread",
+      icon: <StickyNoteIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        openThreadNote(threadRef);
       },
     });
   }

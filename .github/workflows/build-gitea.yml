@@ -63,6 +63,11 @@ jobs:
           }
 
       - name: Build Windows installer
+        # github.com answers 504 for electron-builder-binaries assets whose
+        # release tag contains "@" (nsis@1.2.1, win-codesign@1.1.0). The mirror
+        # serves the same files; electron-builder verifies their checksums.
+        env:
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
         run: vp run dist:desktop:win
 
       # The installer goes to a release rather than a workflow artifact: release
