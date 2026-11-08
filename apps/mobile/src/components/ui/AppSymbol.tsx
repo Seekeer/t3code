@@ -91,6 +91,7 @@ import IconMessageCircleQuestion from "@tabler/icons-react-native/IconMessageCir
 import IconMessage from "@tabler/icons-react-native/IconMessage";
 import IconMessagePlus from "@tabler/icons-react-native/IconMessagePlus";
 import IconMinus from "@tabler/icons-react-native/IconMinus";
+import IconNote from "@tabler/icons-react-native/IconNote";
 import IconMoon from "@tabler/icons-react-native/IconMoon";
 import IconNetwork from "@tabler/icons-react-native/IconNetwork";
 import IconPalette from "@tabler/icons-react-native/IconPalette";
@@ -202,6 +203,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "file.diff": IconFileDiff,
   ellipsis: IconDots,
   moon: IconMoon,
+  "note.text": IconNote,
   "ellipsis.circle": IconDotsCircleHorizontal,
   "exclamationmark.triangle": IconAlertTriangle,
   "exclamationmark.circle": IconAlertCircle,

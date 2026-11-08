@@ -44,6 +44,7 @@ import {
 import { AuthMcpClientAccess } from "./auth.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import { ThreadGuestShare } from "./guestShare.ts";
+import { ThreadNote } from "./threadNote.ts";
 import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
 import {
   OrchestrationSearchThreadsInput,
@@ -492,6 +493,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   /** Absent on threads written before tags existed; read as empty. */
   tags: Schema.optional(StoredThreadTags),
+  /** Private user note, never sent to the agent. Absent means no note. */
+  note: Schema.optional(Schema.String),
   lastVisitedAt: Schema.NullOr(Schema.DateTimeUtc).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
@@ -1895,6 +1898,7 @@ export const OrchestrationV2DomainEvent = Schema.Union([
       "thread.pin-reordered",
       "thread.active-reordered",
       "thread.tags-updated",
+      "thread.note-updated",
       "thread.visited",
       "thread.marked-unread",
       "thread.metadata-updated",
@@ -2780,6 +2784,7 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
       "thread.pin-reordered",
       "thread.active-reordered",
       "thread.tags-updated",
+      "thread.note-updated",
       "thread.visited",
       "thread.marked-unread",
       "thread.pull-request-synced",
@@ -3028,6 +3033,12 @@ export const OrchestrationV2Command = Schema.Union([
     threadId: ThreadId,
     tag: ThreadTag,
     tagged: Schema.Boolean,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.note.set"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    note: Schema.NullOr(ThreadNote),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pin.reorder"),
