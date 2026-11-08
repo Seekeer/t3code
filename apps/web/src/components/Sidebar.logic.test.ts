@@ -26,6 +26,7 @@ import {
   sortPinnedThreadsForSidebar,
   sortScopedProjectsForSidebar,
   sortSidebarV2ProjectGroups,
+  filterSidebarV2VisibleThreads,
   shouldNavigateAfterThreadPark,
   type SidebarListItem,
   type SidebarListMarker,
@@ -736,6 +737,35 @@ describe("sortScopedProjectsForSidebar", () => {
       "Visible project",
       "Archived-only project",
     ]);
+  });
+});
+
+describe("filterSidebarV2VisibleThreads", () => {
+  const tagged = (id: string, projectId: string, tags: string[]) => {
+    const thread = makeThreadFixture({
+      id: ThreadId.make(id),
+      projectId: ProjectId.make(projectId),
+    });
+    return { ...thread, source: { ...thread.source, tags } };
+  };
+  const threads = [
+    tagged("ui-bug", "web", ["ui", "bug"]),
+    tagged("backend", "web", ["backend"]),
+    tagged("other-ui", "api", ["ui"]),
+    tagged("untagged", "web", []),
+  ];
+  const ids = (projects: string[] | null, tags: string[] | null) =>
+    filterSidebarV2VisibleThreads(
+      threads,
+      projects === null ? null : new Set(projects.map((project) => `environment-test:${project}`)),
+      new Set(),
+      tags === null ? null : new Set(tags),
+    ).map((thread) => thread.id);
+
+  it("shows threads carrying any chosen tag, within the project scope", () => {
+    expect(ids(null, null)).toEqual(["ui-bug", "backend", "other-ui", "untagged"]);
+    expect(ids(null, ["bug", "backend"])).toEqual(["ui-bug", "backend"]);
+    expect(ids(["web"], ["ui"])).toEqual(["ui-bug"]);
   });
 });
 

@@ -2,6 +2,7 @@ import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
 import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
+import { matchesThreadTagFilter } from "@t3tools/client-runtime/state/thread-tags";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
 import * as React from "react";
@@ -594,11 +595,13 @@ export function resolveSidebarRowThreadId(
 export function filterSidebarV2VisibleThreads<
   T extends Pick<SidebarThreadSummary, "archivedAt" | "environmentId" | "id" | "lineage"> & {
     projectId: string;
+    readonly source?: { readonly tags?: ReadonlyArray<string> | undefined };
   },
 >(
   threads: readonly T[],
   scopedProjectKeys: ReadonlySet<string> | null,
   delegatedUnderParent: ReadonlySet<string>,
+  scopedTags: ReadonlySet<string> | null = null,
 ): T[] {
   return threads.filter(
     (thread) =>
@@ -609,7 +612,8 @@ export function filterSidebarV2VisibleThreads<
         delegatedUnderParent,
       ) &&
       (scopedProjectKeys === null ||
-        scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
+        scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)) &&
+      matchesThreadTagFilter(thread.source?.tags, scopedTags),
   );
 }
 
