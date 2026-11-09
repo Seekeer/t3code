@@ -38,28 +38,20 @@ function closeThreadNote(): void {
   appAtomRegistry.set(threadNoteOpenAtom, null);
 }
 
-export function ThreadNoteButton({
-  threadRef,
-  canEdit,
-}: {
-  readonly threadRef: ScopedThreadRef;
-  readonly canEdit: boolean;
-}) {
+/**
+ * Saves a thread note at most once per edit; blur and close can both fire for the same text.
+ * `onFailure` gets the unsaved text so the caller can put it back in front of the user.
+ */
+export function useThreadNoteSave(
+  threadRef: ScopedThreadRef,
+  canEdit: boolean,
+  onFailure: (text: string) => void,
+) {
   const note = useQuietThreadProjection(threadRef)?.projection.thread.note ?? "";
-  const openThread = useAtomValue(threadNoteOpenAtom);
-  const open =
-    openThread !== null &&
-    openThread.environmentId === threadRef.environmentId &&
-    openThread.threadId === threadRef.threadId;
   const setThreadNote = useOrchestrationCommand(threadEnvironment.setNote, {
     reportFailure: false,
   });
-  // Null means untouched, so a popover opened from the command palette shows the current note.
-  const [draft, setDraft] = useState<string | null>(null);
-  const text = draft ?? note;
-  // Blur and close can both fire for one edit; the ref keeps that to a single command.
   const submittedRef = useRef<string | null | undefined>(undefined);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const save = (text: string) => {
     if (!canEdit) return;
@@ -75,9 +67,7 @@ export function ThreadNoteButton({
       if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
       const error = squashAtomCommandFailure(result);
       submittedRef.current = undefined;
-      // Reopen with the unsaved text so a failed save never loses it.
-      setDraft(text);
-      openThreadNote(threadRef);
+      onFailure(text);
       toastManager.add({
         type: "error",
         title: "Failed to save thread note",
@@ -85,6 +75,33 @@ export function ThreadNoteButton({
       });
     });
   };
+  const beginEdit = () => {
+    submittedRef.current = undefined;
+  };
+  return { note, save, beginEdit };
+}
+
+export function ThreadNoteButton({
+  threadRef,
+  canEdit,
+}: {
+  readonly threadRef: ScopedThreadRef;
+  readonly canEdit: boolean;
+}) {
+  const openThread = useAtomValue(threadNoteOpenAtom);
+  const open =
+    openThread !== null &&
+    openThread.environmentId === threadRef.environmentId &&
+    openThread.threadId === threadRef.threadId;
+  // Null means untouched, so a popover opened from the command palette shows the current note.
+  const [draft, setDraft] = useState<string | null>(null);
+  const { note, save, beginEdit } = useThreadNoteSave(threadRef, canEdit, (unsaved) => {
+    // Reopen with the unsaved text so a failed save never loses it.
+    setDraft(unsaved);
+    openThreadNote(threadRef);
+  });
+  const text = draft ?? note;
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const hasNote = normalizeThreadNote(note) !== null;
   return (
@@ -92,7 +109,7 @@ export function ThreadNoteButton({
       open={open}
       onOpenChange={(nextOpen, eventDetails) => {
         if (nextOpen) {
-          submittedRef.current = undefined;
+          beginEdit();
           openThreadNote(threadRef);
           return;
         }
