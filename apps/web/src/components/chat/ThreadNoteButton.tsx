@@ -1,9 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import {
   normalizeThreadNote,
   THREAD_NOTE_MAX_LENGTH,
   type ScopedThreadRef,
@@ -13,14 +9,11 @@ import { StickyNoteIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
-import { useQuietThreadProjection } from "~/state/entities";
-import { threadEnvironment } from "~/state/threads";
-import { useOrchestrationCommand } from "~/state/use-orchestration-command";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Textarea } from "../ui/textarea";
-import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useThreadNoteSave } from "./useThreadNoteSave";
 
 const COUNTER_THRESHOLD = THREAD_NOTE_MAX_LENGTH - 1_000;
 
@@ -36,49 +29,6 @@ export function openThreadNote(threadRef: ScopedThreadRef): void {
 
 function closeThreadNote(): void {
   appAtomRegistry.set(threadNoteOpenAtom, null);
-}
-
-/**
- * Saves a thread note at most once per edit; blur and close can both fire for the same text.
- * `onFailure` gets the unsaved text so the caller can put it back in front of the user.
- */
-export function useThreadNoteSave(
-  threadRef: ScopedThreadRef,
-  canEdit: boolean,
-  onFailure: (text: string) => void,
-) {
-  const note = useQuietThreadProjection(threadRef)?.projection.thread.note ?? "";
-  const setThreadNote = useOrchestrationCommand(threadEnvironment.setNote, {
-    reportFailure: false,
-  });
-  const submittedRef = useRef<string | null | undefined>(undefined);
-
-  const save = (text: string) => {
-    if (!canEdit) return;
-    const next = normalizeThreadNote(text);
-    const current =
-      submittedRef.current === undefined ? normalizeThreadNote(note) : submittedRef.current;
-    if (next === current) return;
-    submittedRef.current = next;
-    void setThreadNote({
-      environmentId: threadRef.environmentId,
-      input: { threadId: threadRef.threadId, note: next },
-    }).then((result) => {
-      if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
-      const error = squashAtomCommandFailure(result);
-      submittedRef.current = undefined;
-      onFailure(text);
-      toastManager.add({
-        type: "error",
-        title: "Failed to save thread note",
-        description: error instanceof Error ? error.message : "An error occurred.",
-      });
-    });
-  };
-  const beginEdit = () => {
-    submittedRef.current = undefined;
-  };
-  return { note, save, beginEdit };
 }
 
 export function ThreadNoteButton({

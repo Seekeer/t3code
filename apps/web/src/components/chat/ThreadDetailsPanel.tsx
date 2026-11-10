@@ -1,3 +1,4 @@
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type {
   EditorId,
   EnvironmentId,
@@ -214,7 +215,10 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
               ) : null}
 
               {density !== "essential" && props.isServerThread && !props.draftId && visible.note ? (
-                <ThreadDetailsNote threadRef={activeThreadRef} />
+                <ThreadDetailsNote
+                  key={scopedThreadKey(activeThreadRef)}
+                  threadRef={activeThreadRef}
+                />
               ) : null}
 
               {props.gitCwd && (show.branch || show.git) ? (

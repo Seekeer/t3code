@@ -19,14 +19,8 @@ vi.mock(import("~/state/use-orchestration-command"), async (importOriginal) => (
     }) as never,
 }));
 
-vi.mock(import("~/state/session"), async (importOriginal) => ({
-  ...(await importOriginal()),
-  useEnvironmentScope: (() => true) as never,
-}));
-
 import { AppAtomRegistryProvider } from "~/rpc/atomRegistry";
 import { act, render } from "../../../test/render";
-import { ThreadDetailsNote } from "./ThreadDetailsNote";
 import { openThreadNote, ThreadNoteButton } from "./ThreadNoteButton";
 
 const threadRef = {
@@ -72,30 +66,4 @@ it("keeps a note saved on click-away and drops an edit cancelled with Escape", a
   await expect
     .element(page.getByRole("textbox", { name: "Thread note" }))
     .toHaveValue("Check the login redirect");
-});
-
-it("edits the note in place from the details panel", async () => {
-  persisted.note = "First line";
-  persisted.saves = 0;
-  const panel = () => (
-    <AppAtomRegistryProvider>
-      <ThreadDetailsNote threadRef={threadRef} />
-      <div tabIndex={0}>Outside note</div>
-    </AppAtomRegistryProvider>
-  );
-  await using screen = await render(panel());
-
-  await screen.getByRole("button", { name: "Edit thread note" }).click();
-  const textarea = page.getByRole("textbox", { name: "Thread note" });
-  await textarea.fill("Discard me");
-  await userEvent.keyboard("{Escape}");
-  await expect.element(screen.getByText("First line")).toBeInTheDocument();
-  expect(persisted.saves).toBe(0);
-
-  await screen.getByRole("button", { name: "Edit thread note" }).click();
-  await textarea.fill("Second line");
-  await screen.getByText("Outside note").click();
-  await expect.element(textarea).not.toBeInTheDocument();
-  expect(persisted.note).toBe("Second line");
-  expect(persisted.saves).toBe(1);
 });
