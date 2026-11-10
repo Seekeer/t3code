@@ -352,8 +352,8 @@ question and answer when the thread wakes; the question stays unanswered.
 ## Keep a note on a thread
 
 Each thread can hold one private note, for example what to check next or why
-you paused it. Click the note icon next to the thread title, or run **Edit thread
-note** from the command palette. The note saves when you click away; press Esc to
+you paused it. Click the note icon next to the thread title, run **Edit thread
+note** from the command palette, or click the note in the thread details panel. The note saves when you click away; press Esc to
 discard your edit. On mobile, tap the note button in the thread header.
 
 The note is never sent to the agent and does not move the thread in your lists.

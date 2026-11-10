@@ -1,9 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import {
   normalizeThreadNote,
   THREAD_NOTE_MAX_LENGTH,
   type ScopedThreadRef,
@@ -13,14 +9,11 @@ import { StickyNoteIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
-import { useQuietThreadProjection } from "~/state/entities";
-import { threadEnvironment } from "~/state/threads";
-import { useOrchestrationCommand } from "~/state/use-orchestration-command";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Textarea } from "../ui/textarea";
-import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useThreadNoteSave } from "./useThreadNoteSave";
 
 const COUNTER_THRESHOLD = THREAD_NOTE_MAX_LENGTH - 1_000;
 
@@ -45,46 +38,20 @@ export function ThreadNoteButton({
   readonly threadRef: ScopedThreadRef;
   readonly canEdit: boolean;
 }) {
-  const note = useQuietThreadProjection(threadRef)?.projection.thread.note ?? "";
   const openThread = useAtomValue(threadNoteOpenAtom);
   const open =
     openThread !== null &&
     openThread.environmentId === threadRef.environmentId &&
     openThread.threadId === threadRef.threadId;
-  const setThreadNote = useOrchestrationCommand(threadEnvironment.setNote, {
-    reportFailure: false,
-  });
   // Null means untouched, so a popover opened from the command palette shows the current note.
   const [draft, setDraft] = useState<string | null>(null);
+  const { note, save, beginEdit } = useThreadNoteSave(threadRef, canEdit, (unsaved) => {
+    // Reopen with the unsaved text so a failed save never loses it.
+    setDraft(unsaved);
+    openThreadNote(threadRef);
+  });
   const text = draft ?? note;
-  // Blur and close can both fire for one edit; the ref keeps that to a single command.
-  const submittedRef = useRef<string | null | undefined>(undefined);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const save = (text: string) => {
-    if (!canEdit) return;
-    const next = normalizeThreadNote(text);
-    const current =
-      submittedRef.current === undefined ? normalizeThreadNote(note) : submittedRef.current;
-    if (next === current) return;
-    submittedRef.current = next;
-    void setThreadNote({
-      environmentId: threadRef.environmentId,
-      input: { threadId: threadRef.threadId, note: next },
-    }).then((result) => {
-      if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
-      const error = squashAtomCommandFailure(result);
-      submittedRef.current = undefined;
-      // Reopen with the unsaved text so a failed save never loses it.
-      setDraft(text);
-      openThreadNote(threadRef);
-      toastManager.add({
-        type: "error",
-        title: "Failed to save thread note",
-        description: error instanceof Error ? error.message : "An error occurred.",
-      });
-    });
-  };
 
   const hasNote = normalizeThreadNote(note) !== null;
   return (
@@ -92,7 +59,7 @@ export function ThreadNoteButton({
       open={open}
       onOpenChange={(nextOpen, eventDetails) => {
         if (nextOpen) {
-          submittedRef.current = undefined;
+          beginEdit();
           openThreadNote(threadRef);
           return;
         }
