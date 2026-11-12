@@ -1,4 +1,4 @@
-import type { ThreadId } from "@t3tools/contracts";
+import type { ModelSelection, ThreadId } from "@t3tools/contracts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -13,12 +13,14 @@ import { createOptimisticThreadLifecycle } from "./threadLifecycle.ts";
 import * as DateTime from "effect/DateTime";
 
 import {
+  type AtomCommand,
   createAtomCommandScheduler,
   createEnvironmentCommand,
   createEnvironmentRpcCommand,
 } from "./runtime.ts";
 import {
   type InterruptThreadTurnInput,
+  type UpdateThreadMetadataInput,
   archiveThread,
   closeGuestShare,
   resolveGuestMessage,
@@ -120,7 +122,22 @@ export function createThreadEnvironmentAtoms<R, E>(
     );
   });
 
-  const commands = {
+  // Counts the commands that move or remove a thread's row. A list that holds its rows while
+  // environments synchronize (`stepSteadyShells`) shows the user's own change at once.
+  const rowActionsAtom = Atom.family((_environmentId: EnvironmentId) =>
+    Atom.make(0).pipe(Atom.keepAlive),
+  );
+  const rowAction = <W extends { readonly environmentId: EnvironmentId }, A, E>(
+    command: AtomCommand<W, A, E>,
+  ): AtomCommand<W, A, E> => ({
+    label: command.label,
+    run: (registry, target) => {
+      registry.update(rowActionsAtom(target.environmentId), (count) => count + 1);
+      return command.run(registry, target);
+    },
+  });
+
+  const sent = {
     create: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:create",
       execute: createThread,
@@ -259,6 +276,13 @@ export function createThreadEnvironmentAtoms<R, E>(
       scheduler,
       concurrency,
     }),
+    setModelSelection: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:set-model-selection",
+      execute: (input: UpdateThreadMetadataInput & { readonly modelSelection: ModelSelection }) =>
+        updateThreadMetadata(input),
+      scheduler,
+      concurrency,
+    }),
     setRuntimeMode: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:set-runtime-mode",
       execute: setThreadRuntimeMode,
@@ -388,10 +412,24 @@ export function createThreadEnvironmentAtoms<R, E>(
       concurrency,
     }),
   };
+  const commands = {
+    ...sent,
+    delete: rowAction(sent.delete),
+    archive: rowAction(sent.archive),
+    unarchive: rowAction(sent.unarchive),
+    settle: rowAction(sent.settle),
+    unsettle: rowAction(sent.unsettle),
+    snooze: rowAction(sent.snooze),
+    unsnooze: rowAction(sent.unsnooze),
+    pin: rowAction(sent.pin),
+    unpin: rowAction(sent.unpin),
+  };
   const optimistic = createOptimisticThreadLifecycle(snapshotAtom);
   return {
     ...commands,
+    rowActionsAtom,
     snapshotAtom: optimistic.snapshotAtom,
+    pendingThreadIdsAtom: optimistic.pendingThreadIdsAtom,
     settle: optimistic.wrap(commands.settle, (thread, _input, now, accepted) =>
       !accepted &&
       (thread.pendingRuntimeRequest !== null ||
@@ -475,6 +513,11 @@ export function createThreadEnvironmentAtoms<R, E>(
     reorderActive: optimistic.wrap(commands.reorderActive, (thread, input) => ({
       ...thread,
       activeOrderKey: input.orderKey,
+    })),
+    // Shown at once, so a composer that releases its accepted pick keeps showing it.
+    setModelSelection: optimistic.wrap(commands.setModelSelection, (thread, input) => ({
+      ...thread,
+      modelSelection: input.modelSelection,
     })),
   };
 }
