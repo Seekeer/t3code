@@ -712,6 +712,11 @@ export default function ChatView(props: ChatViewProps) {
   const prefersPlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const isMobileViewport = useMediaQuery("max-sm");
   const [workspaceLayoutElement, setWorkspaceLayoutElement] = useState<HTMLDivElement | null>(null);
+  const noteFocusSequence = useRef(0);
+  const [noteFocusRequest, setNoteFocusRequest] = useState<{
+    threadKey: string;
+    id: number;
+  } | null>(null);
   const threadPanelPopoverAnchorRef = useRef<HTMLElement | null>(null);
   const [terminalUiLaunchContext, setTerminalUiLaunchContext] =
     useState<TerminalLaunchContext | null>(null);
@@ -2733,6 +2738,14 @@ export default function ChatView(props: ChatViewProps) {
       "thread.copyReference": ({ event }) => {
         if (!event.repeat) copyActiveThreadReference();
       },
+      "thread.editNote": ({ event }) => {
+        if (!isServerThread || !canOperateThread || activeThreadKey === null) return false;
+        if (event.repeat) return;
+        useRightPanelStore
+          .getState()
+          .setThreadPanelOpen(activeThreadRef, threadPanelPresentation, true);
+        setNoteFocusRequest({ threadKey: activeThreadKey, id: ++noteFocusSequence.current });
+      },
       "chat.find": () => {
         if (!isServerThread || serverConfig?.threadFind !== true || activeThreadKey === null)
           return false;
@@ -3852,6 +3865,10 @@ export default function ChatView(props: ChatViewProps) {
                 />
 
                 <ThreadDetailsPanel
+                  onNoteEditEnd={() => setNoteFocusRequest(null)}
+                  noteFocusRequest={
+                    noteFocusRequest?.threadKey === activeThreadKey ? noteFocusRequest.id : 0
+                  }
                   anchor={threadPanelPopoverAnchorRef}
                   handle={threadPanelPopoverHandle}
                   forceNewWorktree={multipleModelSelections !== null}

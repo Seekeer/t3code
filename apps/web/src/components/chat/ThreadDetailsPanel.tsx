@@ -53,6 +53,8 @@ interface ThreadDetailsPanelProps extends Pick<
   ComponentProps<typeof ThreadDetailsCard>,
   "anchor" | "handle"
 > {
+  noteFocusRequest?: number;
+  onNoteEditEnd?: () => void;
   forceNewWorktree?: boolean;
   environmentId: EnvironmentId;
   threadId: ThreadId;
@@ -96,6 +98,7 @@ interface ThreadDetailsPanelProps extends Pick<
 }
 
 export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
+  const [handledNoteFocusRequest, setHandledNoteFocusRequest] = useState(0);
   const visible = useClientSettings(resolveThreadDetailsVisibility);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const fileScripts = useT3ProjectFileScripts(
@@ -232,10 +235,23 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 </ThreadDetailsSection>
               ) : null}
 
-              {density !== "essential" && props.isServerThread && !props.draftId && visible.note ? (
+              {(density !== "essential" || !!props.noteFocusRequest) &&
+              props.isServerThread &&
+              !props.draftId &&
+              (visible.note || !!props.noteFocusRequest) ? (
                 <ThreadDetailsNote
                   key={scopedThreadKey(activeThreadRef)}
                   threadRef={activeThreadRef}
+                  focusRequest={
+                    props.noteFocusRequest !== handledNoteFocusRequest
+                      ? (props.noteFocusRequest ?? 0)
+                      : 0
+                  }
+                  onFocusRequestHandled={() =>
+                    setHandledNoteFocusRequest(props.noteFocusRequest ?? 0)
+                  }
+                  onComposerFocusRequest={props.onComposerFocusRequest}
+                  onEditEnd={props.onNoteEditEnd}
                 />
               ) : null}
 

@@ -28,10 +28,18 @@ import { ThreadDetailsNote } from "./ThreadDetailsNote";
 
 const environmentId = EnvironmentId.make("environment");
 
-function panel(threadId: string) {
+function panel(
+  threadId: string,
+  focusRequest = 0,
+  onComposerFocusRequest = () => {},
+  onEditEnd = () => {},
+) {
   return (
     <AppAtomRegistryProvider>
       <ThreadDetailsNote
+        onEditEnd={onEditEnd}
+        focusRequest={focusRequest}
+        onComposerFocusRequest={onComposerFocusRequest}
         key={threadId}
         threadRef={{ environmentId, threadId: ThreadId.make(threadId) }}
       />
@@ -61,4 +69,29 @@ it("keeps Escape inside the panel and saves an open edit when the thread changes
   await screen.rerender(panel("thread-b"));
   await expect.element(textarea).not.toBeInTheDocument();
   expect(persisted.saves).toEqual([{ threadId: "thread-a", note: "Belongs to A" }]);
+});
+
+it("focuses a requested note and saves on Ctrl+Enter before returning to the composer", async () => {
+  persisted.saves = [];
+  const focusComposer = vi.fn();
+  await using screen = await render(panel("thread-a", 1, focusComposer));
+  const textarea = screen.getByRole("textbox", { name: "Thread note" });
+  await expect.element(textarea).toHaveFocus();
+  await textarea.fill("Saved with keyboard");
+  await userEvent.keyboard("{Control>}{Enter}{/Control}");
+  await expect.element(textarea).not.toBeInTheDocument();
+  expect(focusComposer).toHaveBeenCalledOnce();
+  expect(persisted.saves).toEqual([{ threadId: "thread-a", note: "Saved with keyboard" }]);
+});
+
+it("ends the temporary note reveal when the editor unmounts without blur", async () => {
+  persisted.saves = [];
+  const endEdit = vi.fn();
+  await using screen = await render(panel("thread-a", 1, () => {}, endEdit));
+  const textarea = screen.getByRole("textbox", { name: "Thread note" });
+  await expect.element(textarea).toHaveFocus();
+  await textarea.fill("Saved on panel close");
+  await screen.rerender(<div />);
+  expect(endEdit).toHaveBeenCalledOnce();
+  expect(persisted.saves).toEqual([{ threadId: "thread-a", note: "Saved on panel close" }]);
 });
