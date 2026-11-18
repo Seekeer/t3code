@@ -31,15 +31,15 @@ const environmentId = EnvironmentId.make("environment");
 function panel(
   threadId: string,
   focusRequest = 0,
-  onComposerFocusRequest = () => {},
   onEditEnd = () => {},
+  onSendNote?: (note: string) => Promise<boolean>,
 ) {
   return (
     <AppAtomRegistryProvider>
       <ThreadDetailsNote
         onEditEnd={onEditEnd}
         focusRequest={focusRequest}
-        onComposerFocusRequest={onComposerFocusRequest}
+        {...(onSendNote ? { onSendNote } : {})}
         key={threadId}
         threadRef={{ environmentId, threadId: ThreadId.make(threadId) }}
       />
@@ -71,23 +71,52 @@ it("keeps Escape inside the panel and saves an open edit when the thread changes
   expect(persisted.saves).toEqual([{ threadId: "thread-a", note: "Belongs to A" }]);
 });
 
-it("focuses a requested note and saves on Ctrl+Enter before returning to the composer", async () => {
+it("sends the note as the prompt on Ctrl+Enter and clears the saved note", async () => {
   persisted.saves = [];
-  const focusComposer = vi.fn();
-  await using screen = await render(panel("thread-a", 1, focusComposer));
+  const sendNote = vi.fn(async () => true);
+  await using screen = await render(panel("thread-a", 1, () => {}, sendNote));
   const textarea = screen.getByRole("textbox", { name: "Thread note" });
   await expect.element(textarea).toHaveFocus();
-  await textarea.fill("Saved with keyboard");
+  await textarea.fill("Sent with keyboard");
   await userEvent.keyboard("{Control>}{Enter}{/Control}");
   await expect.element(textarea).not.toBeInTheDocument();
-  expect(focusComposer).toHaveBeenCalledOnce();
-  expect(persisted.saves).toEqual([{ threadId: "thread-a", note: "Saved with keyboard" }]);
+  expect(sendNote).toHaveBeenCalledWith("Sent with keyboard");
+  // Saving the text and then clearing it leaves the thread with no note to send twice.
+  expect(persisted.saves).toEqual([
+    { threadId: "thread-a", note: "Sent with keyboard" },
+    { threadId: "thread-a", note: null },
+  ]);
+});
+
+it("keeps the note when the send never happened", async () => {
+  persisted.saves = [];
+  const sendNote = vi.fn(async () => false);
+  await using screen = await render(panel("thread-a", 0, () => {}, sendNote));
+  await screen.getByRole("button", { name: "Send note as prompt" }).click();
+  await expect.poll(() => sendNote.mock.calls.length).toBe(1);
+  expect(persisted.saves).toEqual([]);
+});
+
+it("offers a send control that is disabled while sending is blocked", async () => {
+  persisted.saves = [];
+  const sendNote = vi.fn(async () => true);
+  await using screen = await render(
+    <AppAtomRegistryProvider>
+      <ThreadDetailsNote
+        onSendNote={sendNote}
+        sendDisabledReason="Messages loading"
+        threadRef={{ environmentId, threadId: ThreadId.make("thread-a") }}
+      />
+    </AppAtomRegistryProvider>,
+  );
+  const send = screen.getByRole("button", { name: "Messages loading" });
+  expect(send).toBeDisabled();
 });
 
 it("ends the temporary note reveal when the editor unmounts without blur", async () => {
   persisted.saves = [];
   const endEdit = vi.fn();
-  await using screen = await render(panel("thread-a", 1, () => {}, endEdit));
+  await using screen = await render(panel("thread-a", 1, endEdit));
   const textarea = screen.getByRole("textbox", { name: "Thread note" });
   await expect.element(textarea).toHaveFocus();
   await textarea.fill("Saved on panel close");

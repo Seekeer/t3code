@@ -23,6 +23,7 @@ import { usePullRequestDraftThread } from "./chat/usePullRequestDraftThread";
 import { usePullRequestLinking } from "../hooks/usePullRequestLinking";
 import { useComposerSelection } from "./chat/useComposerSelection";
 import { useComposerFocus } from "./chat/useComposerFocus";
+import { composePromptWithNote } from "./chat/threadNoteSend.logic";
 import { useProjectCloneBanner } from "./chat/useProjectCloneBanner";
 import { useAttachmentPreviewHandoff } from "./chat/useAttachmentPreviewHandoff";
 import {
@@ -3063,6 +3064,38 @@ export default function ChatView(props: ChatViewProps) {
     void onSend(undefined, "auto", "foreground", { annotation, image });
   };
   const sendPreviewAnnotationStable = useStableCallback(sendPreviewAnnotation);
+  // Shares the composer's send-blocking reasons so the note's button never promises a send that fails.
+  const sendNoteDisabledReason = !canOperateThread
+    ? gt("This connection cannot change threads.")
+    : isEnvironmentChanging
+      ? gt("Preparing machine")
+      : isRevertingCheckpoint
+        ? gt("Rewinding conversation")
+        : feedbackUploading
+          ? gt("Sending feedback")
+          : threadDetailLoading
+            ? gt("Messages loading")
+            : worktreeSetupBlocksSend
+              ? gt("Preparing worktree")
+              : projectCloneSendBlockReason;
+  const sendThreadNote = async (note: string): Promise<boolean> => {
+    if (
+      !canOperateThread ||
+      sendNoteDisabledReason !== null ||
+      typeof composerDraftTarget === "string"
+    )
+      return false;
+    // The note joins whatever the user already typed, then goes out as this turn's prompt.
+    const draft =
+      useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.prompt ?? "";
+    const prompt = composePromptWithNote(draft, note);
+    if (prompt.trim().length === 0) return false;
+    promptRef.current = prompt;
+    setComposerDraftPrompt(composerDraftTarget, prompt);
+    await onSend();
+    return true;
+  };
+  const sendThreadNoteStable = useStableCallback(sendThreadNote);
   const onComposerResumeStable = useStableCallback(onResume);
   const onComposerCompactContextStable = useStableCallback(onCompactContext);
   // Read from the projection the footer renders, so the scroll below sees the new message.
@@ -3944,6 +3977,8 @@ export default function ChatView(props: ChatViewProps) {
 
                 <ThreadDetailsPanel
                   onNoteEditEnd={() => setNoteFocusRequest(null)}
+                  onSendNote={canOperateThread ? sendThreadNoteStable : undefined}
+                  sendNoteDisabledReason={sendNoteDisabledReason}
                   noteFocusRequest={
                     noteFocusRequest?.threadKey === activeThreadKey ? noteFocusRequest.id : 0
                   }

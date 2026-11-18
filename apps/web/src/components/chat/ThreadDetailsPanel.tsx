@@ -87,6 +87,9 @@ interface ThreadDetailsPanelProps extends Pick<
   onStartFromOriginChange: (startFromOrigin: boolean) => void;
   onCheckoutPullRequestRequest?: (reference: string) => void;
   onComposerFocusRequest: () => void;
+  /** Sends a thread note as the composer's prompt; returns whether it was sent. */
+  onSendNote?: ((note: string) => Promise<boolean>) | undefined;
+  sendNoteDisabledReason?: string | null;
   onOpenChanges?: () => void;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
@@ -252,7 +255,8 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                   onFocusRequestHandled={() =>
                     setHandledNoteFocusRequest(props.noteFocusRequest ?? 0)
                   }
-                  onComposerFocusRequest={props.onComposerFocusRequest}
+                  onSendNote={props.onSendNote}
+                  sendDisabledReason={props.sendNoteDisabledReason ?? null}
                   onEditEnd={props.onNoteEditEnd}
                 />
               ) : null}
