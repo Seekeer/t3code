@@ -53,6 +53,7 @@ import {
   PinOffIcon,
   ShieldQuestionIcon,
   SquarePenIcon,
+  TagIcon,
   TerminalIcon,
   Undo2Icon,
   UserRoundIcon,
@@ -1199,10 +1200,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       </span>
     ) : null;
   const diff = latestRunDiff(thread);
+  const tags = thread.source?.tags ?? [];
   // Only the trailing icons would remain, so the row moves them to the title line instead.
   const metaLineEmpty =
     !checkoutThread.branch &&
     !showsScratchMachine &&
+    tags.length === 0 &&
     prBadge === null &&
     diff === null &&
     runningTerminalIds.length === 0;
@@ -1227,6 +1230,21 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       ) : (
         <span className="flex-1" />
       )}
+      {tags.length > 0 ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span className="inline-flex min-w-0 max-w-1/2 items-center gap-1 overflow-hidden" />
+            }
+          >
+            <TagIcon aria-hidden className="size-3 shrink-0" />
+            <span className="truncate rounded-sm bg-accent px-1 text-accent-foreground">
+              {tags.join(", ")}
+            </span>
+          </TooltipTrigger>
+          <TooltipPopup>{tags.join(", ")}</TooltipPopup>
+        </Tooltip>
+      ) : null}
       {terminalStatusIcon}
       {prBadge}
       {diff ? (
