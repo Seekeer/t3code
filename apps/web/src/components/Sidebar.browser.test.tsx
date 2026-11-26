@@ -70,6 +70,13 @@ vi.mock("./sidebar/SidebarChrome", () => ({
   SidebarChromeFooter: () => null,
 }));
 
+// Other browser files share localStorage and can leave persisted composer drafts.
+function isolateComposerDrafts(): Disposable {
+  const previous = useComposerDraftStore.getState();
+  useComposerDraftStore.setState(useComposerDraftStore.getInitialState(), true);
+  return { [Symbol.dispose]: () => useComposerDraftStore.setState(previous, true) };
+}
+
 function project(id: string): Project {
   return {
     id: ProjectId.make(id),
@@ -91,6 +98,7 @@ describe("sidebar header new thread", () => {
     { mode: "boring", count: 2, shift: true, picker: false },
     { mode: "boring", count: 1, shift: false, picker: false },
   ] as const)("$mode sidebar, $count projects, shift=$shift: picker=$picker", async (scenario) => {
+    using _drafts = isolateComposerDrafts();
     using stack = new DisposableStack();
     const previousSettings = getClientSettings();
     stack.defer(() => __setClientSettingsForTests(previousSettings));
@@ -138,6 +146,7 @@ describe("sidebar header new thread", () => {
 // regression: #41549 a grouped project's folder New thread went to the primary copy
 describe("sidebar project folder new thread", () => {
   it("starts in the copy of the viewed thread, as the new-thread shortcut does", async () => {
+    using _drafts = isolateComposerDrafts();
     using stack = new DisposableStack();
     const previousSettings = getClientSettings();
     stack.defer(() => __setClientSettingsForTests(previousSettings));
@@ -197,6 +206,7 @@ describe("sidebar project folder new thread", () => {
 // regression: #38623 unsent drafts are listed above threads but mod+1..9 skipped them
 describe("sidebar numbered jumps", () => {
   it("numbers the unsent draft at the top before the threads below it", async () => {
+    using _drafts = isolateComposerDrafts();
     const initial = useComposerDraftStore.getState();
     using stack = new DisposableStack();
     stack.defer(() => useComposerDraftStore.setState(initial, true));
@@ -268,6 +278,7 @@ function threadShell(projectId: ProjectId, index: number): EnvironmentThreadShel
 describe("sidebar render isolation", () => {
   // regression: #33100 Cmd+J re-rendered every sidebar row, which took hundreds of ms with many threads
   it("does not re-render thread rows when a quick Mod shortcut opens and focuses the terminal", async () => {
+    using _drafts = isolateComposerDrafts();
     using stack = new DisposableStack();
     const activeProject = project("active");
     const threads = Array.from({ length: 5 }, (_, index) => threadShell(activeProject.id, index));
@@ -343,6 +354,7 @@ describe("sidebar thread rename", () => {
   it.each(["{Enter}", "{Tab}"])(
     "ending an untouched rename with %s keeps a title that arrived while it was open",
     async (finish) => {
+      using _drafts = isolateComposerDrafts();
       const activeProject = project("active");
       const routeThreadRef: ScopedThreadRef = {
         environmentId: activeProject.environmentId,
@@ -394,6 +406,7 @@ describe("sidebar thread rename", () => {
 describe("sidebar thread click", () => {
   // regression: #40715 macOS counts quick clicks on different rows, so the next row got detail 2 and was ignored
   it("opens another thread when the click arrives with a double-click count", async () => {
+    using _drafts = isolateComposerDrafts();
     const activeProject = project("active");
     const threads = [threadShell(activeProject.id, 0), threadShell(activeProject.id, 1)];
     const routeThreadRef: ScopedThreadRef = {
@@ -444,6 +457,7 @@ describe("sidebar thread click", () => {
 
 describe("sidebar thread menu", () => {
   it("tells the menu whether the keyboard opened it", async () => {
+    using _drafts = isolateComposerDrafts();
     const activeProject = project("active");
     const thread = threadShell(activeProject.id, 0);
     const threadRef = { environmentId: activeProject.environmentId, threadId: thread.id };
@@ -483,6 +497,7 @@ describe("sidebar thread menu", () => {
 
 describe("sidebar settled pagination", () => {
   it("keeps the viewport in place when showing more settled threads", async () => {
+    using _drafts = isolateComposerDrafts();
     using stack = new DisposableStack();
     const style = document.createElement("style");
     style.textContent = appCss;
