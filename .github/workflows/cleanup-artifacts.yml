@@ -2,10 +2,31 @@ name: Keep latest artifact of each type
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Build Windows installer","CI","Forward to Cursor hygiene","Deploy T3 Connect relay","Desktop macOS Preview Publish","Desktop macOS Preview","Issue Labels","Mobile Android APK","Mobile EAS Preview","Mobile EAS Production","Mobile Fingerprint Check","Mobile Showcase Screenshots","PR Size","PR Vouch","Publish AUR package","Release desktop build","Release","Thread Transfer Report","Windows Tests"]
+    workflows:
+      [
+        "Build Windows installer",
+        "CI",
+        "Forward to Cursor hygiene",
+        "Deploy T3 Connect relay",
+        "Desktop macOS Preview Publish",
+        "Desktop macOS Preview",
+        "Issue Labels",
+        "Mobile Android APK",
+        "Mobile EAS Preview",
+        "Mobile EAS Production",
+        "Mobile Fingerprint Check",
+        "Mobile Showcase Screenshots",
+        "PR Size",
+        "PR Vouch",
+        "Publish AUR package",
+        "Release desktop build",
+        "Release",
+        "Thread Transfer Report",
+        "Windows Tests",
+      ]
     types: [completed]
   schedule:
-    - cron: '23 * * * *'
+    - cron: "23 * * * *"
 permissions:
   actions: write
 concurrency:

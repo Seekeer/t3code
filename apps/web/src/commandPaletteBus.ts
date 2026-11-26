@@ -4,6 +4,7 @@ import type {
   ScopedThreadRef,
 } from "@t3tools/contracts";
 
+import type { DraftId } from "./composerDraftStore";
 import { dispatchCommandPalette, isCommandPaletteMounted } from "./commandPaletteStore";
 
 export interface CommandPaletteLinkedThreads {
@@ -13,6 +14,8 @@ export interface CommandPaletteLinkedThreads {
 
 export interface CommandPaletteOpenDetail {
   readonly open?: "add-project" | "new-thread-in";
+  /** With add-project: the draft the new project is picked for. */
+  readonly draftId?: DraftId | null;
   readonly query?: string;
   readonly linkedThreads?: CommandPaletteLinkedThreads;
 }
@@ -24,7 +27,10 @@ export function openCommandPalette(detail: CommandPaletteOpenDetail = {}): void 
   if (detail.open === "new-thread-in") {
     dispatchCommandPalette({ _tag: "OpenNewThreadIn" });
   } else if (detail.open === "add-project") {
-    dispatchCommandPalette({ _tag: "OpenAddProject" });
+    dispatchCommandPalette({
+      _tag: "OpenAddProject",
+      ...(detail.draftId ? { draftId: detail.draftId } : {}),
+    });
   } else if (detail.query !== undefined) {
     dispatchCommandPalette({
       _tag: "OpenSearch",
