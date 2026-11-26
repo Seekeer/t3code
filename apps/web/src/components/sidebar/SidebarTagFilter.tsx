@@ -1,4 +1,5 @@
 import type { ThreadTagCount } from "@t3tools/client-runtime/state/thread-tags";
+import { T, useGT } from "gt-react";
 import { CheckIcon, TagIcon } from "lucide-react";
 import { type ReactNode, useReducer, useRef } from "react";
 
@@ -43,6 +44,7 @@ export function SidebarTagFilter(props: {
   readonly selectedTags: ReadonlyArray<string>;
   readonly onSelectedTagsChange: (tags: readonly string[]) => void;
 }) {
+  const gt = useGT();
   const { tags, selectedTags, onSelectedTagsChange } = props;
   const [menu, dispatchMenu] = useReducer(reduceSidebarProjectScopeMenuState, {
     open: false,
@@ -51,7 +53,7 @@ export function SidebarTagFilter(props: {
   const filter = useComboboxFilter();
   const highlightedTagRef = useRef<string | null>(null);
   const items: TagFilterItem[] = [
-    { value: ALL_TAGS_VALUE, label: "All tags", count: null },
+    { value: ALL_TAGS_VALUE, label: gt("All tags"), count: null },
     ...tags.map((entry) => ({ value: entry.tag, label: entry.tag, count: entry.count })),
   ];
   const query = menu.query.trim();
@@ -107,8 +109,8 @@ export function SidebarTagFilter(props: {
           <SidebarHeaderIconButton
             label={
               selectedTags.length > 0
-                ? `Filter threads by tag: ${selectedTags.join(", ")}`
-                : "Filter threads by tag"
+                ? gt("Filter threads by tag: {tags}", { tags: selectedTags.join(", ") })
+                : gt("Filter threads by tag")
             }
           />
         }
@@ -130,8 +132,8 @@ export function SidebarTagFilter(props: {
         finalFocus={(closeType) => closeType === "keyboard"}
       >
         <ComboboxSearchInput
-          aria-label="Search tags"
-          placeholder="Search tags..."
+          aria-label={gt("Search tags")}
+          placeholder={gt("Search tags...")}
           value={menu.query}
           onKeyDown={(event) => {
             if (event.defaultPrevented || event.nativeEvent.isComposing) return;
@@ -143,7 +145,9 @@ export function SidebarTagFilter(props: {
           }}
           onChange={(event) => dispatchMenu({ type: "query-changed", query: event.target.value })}
         />
-        <ComboboxEmpty>No matching tags.</ComboboxEmpty>
+        <ComboboxEmpty>
+          <T>No matching tags.</T>
+        </ComboboxEmpty>
         <ComboboxList aria-multiselectable>
           {(item: TagFilterItem) => {
             const isSelected =

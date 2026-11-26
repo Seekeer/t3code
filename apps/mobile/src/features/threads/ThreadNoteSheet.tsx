@@ -7,6 +7,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import { T, useGT } from "gt-react-native";
 import { useState } from "react";
 import { Platform, ScrollView, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,6 +26,7 @@ type ThreadNoteSheetProps = StaticScreenProps<{
 const COUNTER_THRESHOLD = THREAD_NOTE_MAX_LENGTH - 1_000;
 
 export function ThreadNoteSheet({ route }: ThreadNoteSheetProps) {
+  const gt = useGT();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -64,17 +66,17 @@ export function ThreadNoteSheet({ route }: ThreadNoteSheetProps) {
           <TextInput
             multiline
             autoFocus
-            accessibilityLabel="Thread note"
+            accessibilityLabel={gt("Thread note")}
             value={draft}
             onChangeText={setDraft}
             maxLength={THREAD_NOTE_MAX_LENGTH}
-            placeholder="Add a note for this thread…"
+            placeholder={gt("Add a note for this thread…")}
             textAlignVertical="top"
             className="min-h-40 rounded-xl bg-subtle px-4 py-3 text-base"
           />
           <View className="flex-row justify-between gap-2">
             <Text className="text-xs text-foreground-muted">
-              Only visible to you. Not sent to the agent.
+              <T>Only visible to you. Not sent to the agent.</T>
             </Text>
             {draft.length > COUNTER_THRESHOLD ? (
               <Text className="text-xs text-foreground-muted">
@@ -85,9 +87,9 @@ export function ThreadNoteSheet({ route }: ThreadNoteSheetProps) {
         </ScrollView>
       </ScreenContent>
       <SheetHeader
-        title="Note"
+        title={gt("Note", { $context: "private thread note" })}
         onCancel={() => navigation.goBack()}
-        confirm={{ label: "Done", onPress: save }}
+        confirm={{ label: gt("Done"), onPress: save }}
       />
     </View>
   );

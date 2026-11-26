@@ -3,8 +3,10 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { normalizeThreadNote, type ScopedThreadRef } from "@t3tools/contracts";
+import { msg } from "gt-react";
 import { useRef } from "react";
 
+import { m } from "~/i18n/messages";
 import { useQuietThreadProjection } from "~/state/entities";
 import { threadEnvironment } from "~/state/threads";
 import { useOrchestrationCommand } from "~/state/use-orchestration-command";
@@ -42,8 +44,8 @@ export function useThreadNoteSave(
       onFailure(text);
       toastManager.add({
         type: "error",
-        title: "Failed to save thread note",
-        description: error instanceof Error ? error.message : "An error occurred.",
+        title: m(msg("Failed to save thread note")),
+        description: error instanceof Error ? error.message : m(msg("An error occurred.")),
       });
     });
   };

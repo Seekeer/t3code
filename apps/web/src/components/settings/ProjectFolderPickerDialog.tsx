@@ -10,9 +10,11 @@ import {
   getBrowseParentPath,
 } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { msg, useGT, useMessages } from "gt-react";
 import { CornerLeftUpIcon, FolderIcon } from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
 
+import { m, type MessageResolver } from "~/i18n/messages";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { filesystemEnvironment } from "~/state/filesystem";
 import { useEnvironmentQuery } from "~/state/query";
@@ -28,14 +30,7 @@ import {
   seedProjectFolderQuery,
 } from "./ProjectFolderPickerDialog.logic";
 
-/**
- * Pick the folder a project's checkout points at.
- *
- * Every path here is resolved by the project's own environment, so a remote or
- * tunneled project lists that machine's filesystem rather than the client's.
- * The server alone decides whether a path is usable, so this dialog hands over
- * a path and lets the dispatch result speak.
- */
+// Paths belong to the project's environment, which may be remote.
 export function ProjectFolderPickerDialog(props: {
   readonly currentPath: string;
   readonly environmentId: EnvironmentId;
@@ -80,6 +75,8 @@ function ProjectFolderPickerBody(props: {
   readonly platform: string;
   readonly projectName: string;
 }) {
+  const gt = useGT();
+  const resolve = useMessages();
   const [query, setQuery] = useState(() => seedProjectFolderQuery(props.currentPath));
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
   const { onClose, onSelect, platform } = props;
@@ -156,7 +153,7 @@ function ProjectFolderPickerBody(props: {
     browseTo,
   });
 
-  const ariaLabel = `Change folder for ${props.projectName}`;
+  const ariaLabel = gt("Change folder for {projectName}", { projectName: props.projectName });
 
   return (
     <CommandDialogPopup
@@ -167,8 +164,8 @@ function ProjectFolderPickerBody(props: {
       <CommandPaletteContent
         aria-label={ariaLabel}
         autoHighlight={false}
-        escapeLabel="Close"
-        footerActionLabel={selection.ok ? "Use folder" : undefined}
+        escapeLabel={gt("Close")}
+        footerActionLabel={selection.ok ? gt("Use folder") : undefined}
         inputAccessory={
           <Tooltip>
             <TooltipTrigger
@@ -178,7 +175,7 @@ function ProjectFolderPickerBody(props: {
                   size="xs"
                   tabIndex={-1}
                   className="absolute inset-e-2.5 top-1/2 -translate-y-1/2"
-                  aria-label="Use folder (Enter)"
+                  aria-label={gt("Use folder (Enter)")}
                   disabled={!canSubmitSelection}
                   onMouseDown={(event) => {
                     event.preventDefault();
@@ -187,13 +184,13 @@ function ProjectFolderPickerBody(props: {
                 />
               }
             >
-              <span>{selection.ok ? "Use folder" : "Invalid path"}</span>
+              <span>{selection.ok ? gt("Use folder") : gt("Invalid path")}</span>
               <KbdGroup className="pointer-events-none -me-0.5">
                 <Kbd>Enter</Kbd>
               </KbdGroup>
             </TooltipTrigger>
             <TooltipPopup side="top">
-              {selection.ok ? "Use folder (Enter)" : selection.error}
+              {selection.ok ? gt("Use folder (Enter)") : selection.error}
             </TooltipPopup>
           </Tooltip>
         }
@@ -220,30 +217,38 @@ function ProjectFolderPickerBody(props: {
               void item.run();
             }
           }}
-          emptyStateMessage={projectFolderPickerEmptyMessage({
-            cause: browseState.cause,
-            isPending: browseState.isPending,
-            isBrowsingADirectory: browsePath.directoryPath.length > 0,
-          })}
+          emptyStateMessage={projectFolderPickerEmptyMessage(
+            {
+              cause: browseState.cause,
+              isPending: browseState.isPending,
+              isBrowsingADirectory: browsePath.directoryPath.length > 0,
+            },
+            resolve,
+          )}
         />
       </CommandPaletteContent>
     </CommandDialogPopup>
   );
 }
 
-function projectFolderPickerEmptyMessage(input: {
-  readonly cause: unknown;
-  readonly isPending: boolean;
-  readonly isBrowsingADirectory: boolean;
-}): string {
+function projectFolderPickerEmptyMessage(
+  input: {
+    readonly cause: unknown;
+    readonly isPending: boolean;
+    readonly isBrowsingADirectory: boolean;
+  },
+  resolve: MessageResolver = m,
+): string {
   if (isMissingDirectoryBrowseError(input.cause)) {
-    return "This folder is not available. Choose another folder.";
+    return resolve(msg("This folder is not available. Choose another folder."));
   }
   if (input.cause !== null) {
-    return "The environment could not be reached. Try again once it is connected.";
+    return resolve(msg("The environment could not be reached. Try again once it is connected."));
   }
   if (input.isPending) {
-    return "Loading folders…";
+    return resolve(msg("Loading folders…"));
   }
-  return input.isBrowsingADirectory ? "No subfolders here." : "Type or paste a folder path.";
+  return resolve(
+    input.isBrowsingADirectory ? msg("No subfolders here.") : msg("Type or paste a folder path."),
+  );
 }

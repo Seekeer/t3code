@@ -1064,9 +1064,9 @@ export function resolveWindowsServerAsarIgnoreGlobs(arch: typeof BuildArch.Type)
   ];
 }
 
-// Fork: upstream caps this at 80; the fork's build ships 91 files after the
-// 2026-11-12 upstream sync, so the limit is raised to keep the installer building.
-export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 92;
+// The Windows x64 payload has 105 files, including the server compile cache
+// and embedded WSL runtime. Keep a small allowance for cache entry changes.
+export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 112;
 export const WINDOWS_SERVER_RESOURCE_SOURCE_DIR = "apps/desktop/prod-resources/windows-server";
 export const WINDOWS_SERVER_EXTRA_RESOURCES = [
   {

@@ -3,6 +3,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeModule from "node:module";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import { workspaceDetailRouter } from "../layout/workspace/workspace-detail-selection";
 import type { NavigationState } from "@react-navigation/native";
@@ -118,7 +119,15 @@ vi.mock("../../state/entities", () => ({
       [
         "environment",
         {
-          environment: { platform: { os: "linux" }, capabilities: {} },
+          environment: {
+            platform: {
+              os:
+                HostProcess.Platform.defaultValue() === "win32"
+                  ? "windows"
+                  : HostProcess.Platform.defaultValue(),
+            },
+            capabilities: {},
+          },
           newProjectsRoot: state.newProjectsRoot,
           settings: { addProjectBaseDirectory: state.baseDirectory },
         },

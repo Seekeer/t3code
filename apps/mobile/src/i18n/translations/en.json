@@ -5711,5 +5711,10 @@
   "201490988858b511": "withdrawn by {by}",
   "46d614fa7b4bf1e5": "Workflow runs",
   "373e02f7d2ce7a58": "Change folder",
-  "ec4ab1a1e5acae48": "Current folder"
+  "ec4ab1a1e5acae48": "Current folder",
+  "4dfdce23ceb4a01c": "Thread note (has note)",
+  "533215a26c027b96": "Thread note",
+  "1427833211c5579e": "Add a note for this thread…",
+  "e38ad62a0f7e5efb": "Note",
+  "7ab12badab0f325b": "Only visible to you. Not sent to the agent."
 }

@@ -17,7 +17,7 @@ const entities = vi.hoisted(() => ({
   threads: [] as ReadonlyArray<Thread>,
   threadTags: [] as ReadonlyArray<string>,
   setThreadTag: (_value: unknown): void => undefined,
-  activeThread: undefined as Thread | undefined,
+  activeThread: null as Thread | null,
   delegatedUnderParent: new Set<string>() as ReadonlySet<string>,
   handleNewThread: vi.fn(async () => undefined),
 }));
@@ -75,7 +75,7 @@ function setup(state: Partial<typeof entities> = {}) {
   entities.threads = state.threads ?? [];
   entities.threadTags = [];
   entities.setThreadTag = () => undefined;
-  entities.activeThread = state.activeThread;
+  entities.activeThread = state.activeThread ?? null;
   entities.delegatedUnderParent = state.delegatedUnderParent ?? new Set();
   entities.handleNewThread.mockClear();
 }
